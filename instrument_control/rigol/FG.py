@@ -1,4 +1,4 @@
-import visa
+import pyvisa as visa
 from pyvisa import VisaIOError
 from pylab import fromstring, linspace, floor
 import numpy as np
@@ -34,6 +34,8 @@ class FG(object):
         #pdb.set_trace()
         datStr=','.join([str(num) for num in dataInt])
         #print(datStr[:30])
+
+        self.cur
         return datStr
 
     #@abc.abstractmethod
@@ -58,6 +60,7 @@ class FG(object):
         if addr is not None:
             self.addr=addr
         self.connect();
+        self.curWaveform = {}
         
 
     def close(self):

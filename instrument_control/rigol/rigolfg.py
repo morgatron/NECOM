@@ -1,3 +1,6 @@
+""" Control of the Rigol DG952s. Not very tested. 
+Mostly just copied from the old DG1000Z code. Some bits won't work as expected (because, Rigol)
+"""
 from time import sleep
 from pylab import *
 import time
@@ -9,7 +12,8 @@ import FG
 
 class RigolFG(FG.FG):
     #addr="USB0::0x1AB1::0x0588::DG1D124004333::INSTR"
-    addr="USB0::0x1AB1::0x0643::DG9A210800150::INSTR"
+    #addr="USB0::0x1AB1::0x0643::DG9A210800150::INSTR"
+
     numChans=2 
     
 
@@ -58,9 +62,9 @@ class RigolFG(FG.FG):
         Nstr=str(N)
         return ( "#{0}{1}".format(len(Nstr), Nstr),  dataBytes )
         #return "#{0}{1}{2}".format(len(Nstr), Nstr), data.tobytes())
-    def uploadWaveform(self,y, scl=True, chanNum=0, name=None):
-        if name is not None:
-            print("waveform name is ignored")
+    def uploadWaveform(self,y, scl=True, chanNum=0):
+        if len(y)> 2**14:
+            print("Uploading waveforms of lenght > 2^14 usually doesn't have expected results.")
         #datStr=self.__super__.array_to_text_block(y, 0, 16383, scl=scl)
         #datStr=self.array_to_text_block(y, scl=scl)
         datBlkHead,datBlk=self.array_to_binary_block(y, scl=scl)
@@ -70,24 +74,31 @@ class RigolFG(FG.FG):
         self.handle.write_raw(head + datBlk)
         #self.handle.write("DATA {},{}".format(name,datStr))
         sleep(1); #Hopefully this isn't needed?
+        self.curWaveform[chanNum] = y
 
-    def setOutputWaveForm(self, t, y, chanNum=0):
-        self.allOff()
-        self.uploadWaveform(y)
-        self.setPeriod((t[1]-t[0])*t.size)
+    def setOutputWaveform(self, y, sampleRate = 1e6,chanNum=0, bUseFullScale=False):
+        print("don't use setOutputWaveform until we can work out what is wrong with setPeriod")
+        self.setOutputState(False, chanNum=chanNum)
+        if bUseFullScale:
+            self.setLH(y.min(), y.max())
+            y = (y - (y.max() + y.min)/2  )* 2/(y.max()-y.min()) 
+
+        self.uploadWaveform(y, chanNum=chanNum)
+        self.setRate(sampleRate, chanNum=chanNum)
         errStr=self.getErr()
         errVal=int(errStr.split(',')[0])
         #if errVal!= 0 and errVal != -221:
         if errVal:
             raise ValueError(errStr.split(',')[1])
-        self.setLH(y.min(), y.max())
-        self.curWaveform=y
-        self.setOutputState(True, chanNum=0)
+        
+        self.setOutputState(True, chanNum=chanNum)
+
     def uploadAndSetWaveform(self, t,x,chanNum=0):
         """Simple upload a waveform and set it active.
 
         NEEDS UPDATING
         """
+        raise NotImplementedError("Needs updating!")
         figure()
         chanStr="" if chanNum==0 else ":CH2"
         self.handle.write('FUNC:USER{} VOLATILE'.format(chanStr))
@@ -153,6 +164,7 @@ class RigolFG(FG.FG):
         return out
         
     def setTriggerMode(self, mode="ext", chanNum=0):
+        """Modes are 'int', 'ext', or 'man'"""
         #allowed_modes=['int', 'ext', 'man']
         modeTransDict={'int':'IMM',
                 'ext':'EXT',
@@ -170,6 +182,7 @@ class RigolFG(FG.FG):
 
     def setPeriod(self, T, chanNum=0):
         #self.handle.write('FREQ {:.5f}'.format(1./T))
+        print("Called setPeriod- but setting the period doesn't work on the DG952. Use sample rate instead")
         self.handle.write('SOUR{}:PERIOD {:.5f}'.format(chanNum+1,T))
 
 
@@ -188,40 +201,48 @@ class RigolFG(FG.FG):
         else:
             self.handle.write("SOUR{}:FUNC:SEQ:SRAT {}".format(chanNum+1,sampRate))
 
+    def getSampleRate(self, chanNum=0):
+            return float(self.handle.query(f"SOUR{chanNum+1}:FUNC:SEQ:SRAT?"))
+
     def setLoad(self, load=50, chanNum=0):
         """If load is -ve, infinite is assumed
         """
-        chStr="" if chanNum==0 else ":CH2"
-        if load >0:
-            loadStr="50"
+        #chStr="" if chanNum==0 else ":CH2"
+        if load >=1:
+            loadStr=str(load)
         else:
             loadStr="INF"
-        self.handle.write('OUTP:LOAD:{} {}'.format(chStr,loadStr) );
+        self.handle.write(f'OUTP{chanNum+1}:LOAD {loadStr}');
 
-    def setInverted(self, bInvert=True):
-        super().setInverted(bInvert)
+    def setInverted(self, bInvert=True, chanNum=0):
+        super().setInverted(bInvert,)
         #sleep(1)
 if __name__=="__main__":
     import numpy as np
-    
-    fg=RigolFG();
+    addr='USB0::0x1AB1::0x0643::DG9A210800149::INSTR'
+    fg=RigolFG(addr);
     def sendPulse(tDelay=1, tWidth=3000, tTotal=4096):
 
-        t=np.linspace(0,tTotal,tTotal*20)*1.0;
+        t=np.linspace(0,tTotal,16000)*1.0;
         y=np.where( (t>tDelay) & (t<tDelay+tWidth), 5.0, 0.)
+        y2=np.where( (t>tDelay+tTotal/2) & (t<tDelay+tWidth+tTotal/2), 5.0, 0.)
 
-        fg.setLoad(50,0)
+        #fg.setLoad(50,0)
         from pylab import plot,show
         plot(t,y)
-        fg.uploadWaveform(y);
-        fg.setPeriod(tTotal*1e-6);
-        fg.setLowHigh(0,4.5)
+        plot(t,y2)
+
+        fg.setOutputWaveform(y, sampleRate=t.size/tTotal, chanNum=0);
+        fg.setOutputWaveform(y2, sampleRate=t.size/tTotal, chanNum=1)
+        #fg.setPeriod(tTotal*1e-6);
+        #fg.setLowHigh(0,4.5)
         print(fg.handle.query("VOLT:OFFS?"))
+
         #print (rfg.setOutputWaveForm(t, y2, 1))
         #fg.allOn()
         #print("stuff")
         show()
 
-    sendPulse(0.,10.,100)
-    fg.setTriggerDelay(200*1e-6)
-    fg.setOffset(-0.01);
+    sendPulse(0.,200e-6,20e-3)
+    #fg.setTriggerDelay(200*1e-6)
+    #fg.setOffset(-0.01);
