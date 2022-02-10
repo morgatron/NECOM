@@ -439,6 +439,12 @@ def stopMonitoring():
     else:
         sendCmd('monitorStop')
 
+def streaming_callback(handle, noOfSamples, startIndex, overflow, triggerAt, triggered, autoStop, param):
+    global segmentizer, wasCalledBack
+    wasCalledBack = True
+    datA = bufferAMax[startIndex:sourceEnd]
+    datB = bufferBMax[startIndex:sourceEnd]
+    segmentizer.feedData(datA, datB)
 
 from queueview import QueueView
 from  queue import Queue
