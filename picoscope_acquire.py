@@ -537,8 +537,8 @@ def startStreaming(totalLength=None, bKeepSampsPerSeg=True):
     else:
         NptsPerSeg=None
     cb=PreprocessCallback(glbPS.data[:,0,:], 4e6, Nds=1, sampleInterval=glbPS.sampleInterval*glbPS.Nds, NptsPerSegment=NptsPerSeg)
-    if totalLength is None:
-        cb.setTotalIntervalLength(curAcqD['acqTime'])
+    if totalLength is not None:
+        cb.setTotalIntervalLength(totalLength)
     glbPS.runStreaming(bAutoStop=False, downSampleMode=4, downSampleRatio=glbPS.Nds)
     glbPS.cb=cb
     glbPS.cb.tStartStreaming=time.time()

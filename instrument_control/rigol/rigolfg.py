@@ -243,6 +243,6 @@ if __name__=="__main__":
         #print("stuff")
         show()
 
-    sendPulse(0.,200e-6,20e-3)
+    sendPulse(0.,200e-6,12e-3)
     #fg.setTriggerDelay(200*1e-6)
     #fg.setOffset(-0.01);
