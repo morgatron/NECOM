@@ -2,7 +2,8 @@
 """
 
 
-# Start controller process and terminal
 # Start acquisition terminal
+# e.g. call("ipython")
+# Start controller process and terminal
 # Start GUIs
 # Start analysis

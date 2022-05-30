@@ -1,3 +1,5 @@
+""" Control of rigol 100x
+"""
 from time import sleep
 from pylab import *
 import time
@@ -12,7 +14,12 @@ class RigolFG1000(FG.FG):
     numChans=2 
     
     def chanStr(self, chanNum):
-        return "" if chNum==0 else ":CH2"
+        if chanNum==0:
+            return ":CH1"
+        elif chanNum == 1:
+            return ":CH2"
+        else:
+            raise ValueError(f"Don't have a channel {chanNum}")
 
     def configureHandle(self):
         self.handle.query_delay=0.5
@@ -20,7 +27,7 @@ class RigolFG1000(FG.FG):
         normalWrite=self.handle.write
         def newWrite(*args, **kwargs):
             normalWrite(*args, **kwargs)
-            sleep(1.0)
+            sleep(.5)
         self.handle.write=newWrite
 
     def setOutputState(self, bOn, chNum=0):
@@ -31,31 +38,20 @@ class RigolFG1000(FG.FG):
         #sleep(0.5);
         return out
 
-    @staticmethod
-    def array_to_text_block(data, scl=True):
-        data=np.array(data,dtype='f8')
-        if scl:
-            lowV=data.min()
-            highV=data.max()
-            data=(data-lowV)/np.abs(highV-lowV)*2.-1.0
-            #data/=abs(data).max()
-            #data*=0.5#8191
-        dataInt=np.rint(data).astype('f8')
-        #pdb.set_trace()
-        datStr=','.join([str(num) for num in dataInt])
-        #print(datStr[:100])
-        return datStr
-    @staticmethod
-    def array_to_binary_block(data, scl=True):
-        data=np.array(data)
-        if scl:
-            data/=abs(data).max()
-            
-        data=np.rint(data).astype('i2')
-        dataBytes=bytes(data)
-        N=len(dataBytes)
-        Nstr=str(N)
-        return ( "#{0}{1}".format(len(Nstr), Nstr),  dataBytes )
+   # @staticmethod
+   # def array_to_text_block(data, scl=True):
+   #     data=np.array(data,dtype='f8')
+   #     if scl:
+   #         lowV=data.min()
+   #         highV=data.max()
+   #         data=(data-lowV)/np.abs(highV-lowV)*2.-1.0
+   #         #data/=abs(data).max()
+   #         #data*=0.5#8191
+   #     dataInt=np.rint(data).astype('f8')
+   #     #pdb.set_trace()
+   #     datStr=','.join([str(num) for num in dataInt])
+   #     #print(datStr[:100])
+   #     return datStr
         #return "#{0}{1}{2}".format(len(Nstr), Nstr), data.tobytes())
     def uploadWaveform(self,y, scl=True, name="VOLATILE"):
         #datStr=self.__super__.array_to_text_block(y, 0, 16383, scl=scl)
@@ -76,6 +72,7 @@ class RigolFG1000(FG.FG):
         self.setLH(y.min(), y.max())
         self.curWaveform=y
         self.setOutputState(True, chNum=0)
+
     def uploadAndSetWaveform(self, t,x,chNum=0):
         """Simple upload a waveform and set it active.
         """

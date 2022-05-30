@@ -14,29 +14,46 @@ def list_instruments():
 class FG(object):
     __metaclass__ = abc.ABCMeta
     #ip_address="136.159.248.161"
-    addr="USB0::0x0699::0x0365::C034484::INSTR"
+    addr = None
     handle=None;
     rm=None
     numChans=1.
     
     @staticmethod
-    def array_to_text_block(data, minVal,maxVal, scl=True):
-        """We'll assume it'll be sent as integers"""
-        
-        valRange=maxVal-minVal
-        data=np.array(data,dtype='f8')
-        if scl:
-            lowV=data.min()
-            highV=data.max()
-            data=(data-lowV)/np.abs(highV-lowV) #Now between 0 and 1
-            data*=valRange + minVal
-        dataInt=np.rint(data).astype('i2')
-        #pdb.set_trace()
-        datStr=','.join([str(num) for num in dataInt])
-        #print(datStr[:30])
+    def scaleTo(data, sclTo):
+        try:
+            valRange= sclTo[1] - sclTo[0]
+            lowV = data.min()
+            highV = data.max()
+            data = (data-lowV)/np.abs(highV-lowV) #Now between 0 and 1
+            return data*valRange + sclTo[0]
 
-        self.cur
+        except TypeError:
+            return data/ans(data).max()*sclTo
+
+    @staticmethod
+    def array_to_text_block(data, sclTo = [-1, 1], outputDtype = 'i2'):
+        """We'll assume it'll be uploaded as integers"""
+        data=np.array(data,dtype='f8')
+        if sclTo is not None:
+            data = FG.sclTo(data, sclTo)
+        data *= (2**15 -1)
+        dataInt=np.rint(data).astype(outputDtype)
+        datStr=','.join([str(num) for num in dataInt])
         return datStr
+
+    @staticmethod
+    def array_to_binary_block(data, sclTo=[-1,1]):
+        data=np.array(data)
+        if sclTo:
+            data = FG.scaleTo(data, sclTo)
+            #data/=abs(data).max()
+        data *= (2**15 -1)
+        data=np.rint(data).astype('i2')
+        dataBytes=bytes(data)
+        N=len(dataBytes)
+        Nstr=str(N)
+        return ( "#{0}{1}".format(len(Nstr), Nstr),  dataBytes )
 
     #@abc.abstractmethod
     def connect(self, address=None):
@@ -46,23 +63,53 @@ class FG(object):
         if address is not None:
             self.addr=address
         #self.handle=visa.instrument("TCPIP::{0}::INSTR".format(self.ip_address));
-        self.handle=self.rm.open_resource("{0}".format(self.addr));
+        rm=visa.ResourceManager();
+        self.handle=rm.open_resource("{0}".format(self.addr));
         self.configureHandle()
 
     @abc.abstractmethod
     def configureHandle(self):
         """ Make sure handle is configured correctly for IO, e.g. set the query delay etc.
+        This can be different for different instruments
         """
-        #self.handle.query_delay=0.1
+        self.handle.query_delay=0.5
+        self.handle.timeout=5000
+        normalWrite=self.handle.write
+        def newWrite(*args, **kwargs):
+            normalWrite(*args, **kwargs)
+            sleep(.5)
+        self.handle.write=newWrite
 
     def __init__(self, addr=None):
-        self.rm=visa.ResourceManager();
         if addr is not None:
             self.addr=addr
         self.connect();
         self.curWaveform = {}
         
 
+
+    # REQUIRED TO IMPLEMENT=========================================
+    @abc.abstractmethod
+    def setOutputState(self, bOn, chNum=0):
+        """ Turn that channel on/off
+        """
+
+    @abc.abstractmethod
+    def setTriggerMode(self, mode="SINGLE"):
+        """ Set the trigger mode: e.g. continuous or whatever
+        """
+        pass;
+    @abc.abstractmethod
+    def setTriggerDelay(self, delay):
+        """ Amount of time to wait after a trigger
+        """
+    
+    @abc.abstractmethod
+    def softwareTrigger(self):
+        """Trigger it once
+        """
+    
+    ## Pre-defined methods
     def close(self):
         self.handle.close()
         
@@ -86,18 +133,16 @@ class FG(object):
         for chNum in range(self.numChans):
             self.setOutputState(False, chNum);
 
-    @abc.abstractmethod
-    def setOutputState(self, bOn, chNum=0):
-        """ Turn that channel on/off
-        """
-
-    def setOutputWaveForm(self, t, x, chNum=0):
+    def setOutputWaveForm(self, t, x, chNum=0, bUseFullScale=True):
         """Upload a waveform (t, x) and set it as active on channel chNum
         """
         self.setOutputState(0, chNum)
-        self.uploadWaveform(x, scl=True)
+        if bUseFullScale:
+            self.uploadWaveform(x, sclTo=[-1,1])
+            self.setLH( x.min(), x.max() )
+        else:
+            self.uploadWaveform(x, sclTo=None)
         self.setPeriod(t[-1]-t[0])
-        self.setLH( x.min(), x.max() )
         errStr=self.getErr()
         errVal=int(errStr.split(',')[0])
         #if errVal!= 0 and errVal != -221:
@@ -105,22 +150,6 @@ class FG(object):
             raise ValueError(errStr.split(',')[1])
         self.setOutputState(1, chNum)
 
-    @abc.abstractmethod
-    def setTriggerMode(self, mode="SINGLE"):
-        """ Set the trigger mode: e.g. continuous or whatever
-        """
-        pass;
-    @abc.abstractmethod
-    def setTriggerDelay(self, delay):
-        """ Amount of time to wait after a trigger
-        """
-    
-
-    def trigger(self):
-        """Trigger it once
-        """
-        raise NotImplementedError()
-    
     def setLH(self, low, high, chanNum=0):
         #self.setAmp(0.01)
         offs=(low+high)/2.
@@ -144,6 +173,19 @@ class FG(object):
     #def setLow(self,val):
         
     #    def setHigh(self,val):
+
+        
+    def wait(self):
+        self.handle.query("*OPC?");
+    
+    def getErr(self):
+        return self.handle.query("SYST:ERR?")
+    
+
+    # OPTIONAL METHODS -----------------
+    def setInverted(self, bInvert=True, chanNum=0):
+        raise NotImplementedError()
+
     def setLowHigh(self, low, high, chanNum=0):
         """Set the low and high values for the waveform"""
         raise NotImplementedError()
@@ -163,16 +205,3 @@ class FG(object):
     def uploadWaveform(self, wvfm, name="VOLATILE"):
         """Set the amp for the waveform"""
         raise NotImplementedError()
-
-    def setInverted(self, bInvert=True, chanNum=0):
-        if chanNum>0:
-            self.handle.write("OUTP{}:POL {}".format(int(chanNum+1), "INV" if bInvert else "NORM"))
-        else:
-            self.handle.write("OUTP:POL {}".format("INV" if bInvert else "NORM"))
-        
-    def wait(self):
-        self.handle.query("*OPC?");
-    
-    def getErr(self):
-        return self.handle.query("SYST:ERR?")
-    

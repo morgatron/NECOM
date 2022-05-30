@@ -24,7 +24,7 @@ class RigolFG(FG.FG):
         normalWrite=self.handle.write
         def newWrite(*args, **kwargs):
             normalWrite(*args, **kwargs)
-            sleep(.1) #used to use 1.0 seconds here for the crappy rigols
+            sleep(.2) #used to use 1.0 seconds here for the crappy rigols
         self.handle.write=newWrite
 
     def setOutputState(self, bOn, chanNum=0):
@@ -35,68 +35,69 @@ class RigolFG(FG.FG):
         #sleep(0.5);
         return out
 
-    @staticmethod
-    def array_to_text_block(data, scl=True):
-        data=np.array(data,dtype='f8')
-        if scl:
-            lowV=data.min()
-            highV=data.max()
-            data=(data-lowV)/np.abs(highV-lowV)*2.-1.0
-            #data/=abs(data).max()
-            #data*=0.5#8191
-        dataInt=np.rint(data).astype('f8')
-        #pdb.set_trace()
-        datStr=','.join([str(num) for num in dataInt])
-        #print(datStr[:100])
-        return datStr
-    @staticmethod
-    def array_to_binary_block(data, scl=True):
-        data=np.array(data, dtype='f8')
-        if scl and not np.all(data==0):
-            data/=abs(data).max()
-            data*=(2**15-1)
-            
-        data=np.rint(data).astype('i2')
-        dataBytes=bytes(data)
-        N=len(dataBytes)
-        Nstr=str(N)
-        return ( "#{0}{1}".format(len(Nstr), Nstr),  dataBytes )
-        #return "#{0}{1}{2}".format(len(Nstr), Nstr), data.tobytes())
-    def uploadWaveform(self,y, scl=True, chanNum=0):
+    #@staticmethod
+    #def array_to_text_block(data, scl=True):
+    #    data=np.array(data,dtype='f8')
+    #    if scl:
+    #        lowV=data.min()
+    #        highV=data.max()
+    #        data=(data-lowV)/np.abs(highV-lowV)*2.-1.0
+    #        #data/=abs(data).max()
+    #        #data*=0.5#8191
+    #    dataInt=np.rint(data).astype('f8')
+    #    #pdb.set_trace()
+    #    datStr=','.join([str(num) for num in dataInt])
+    #    #print(datStr[:100])
+    #    return datStr
+    #@staticmethod
+    #def array_to_binary_block(data, scl=True):
+    #    data=np.array(data, dtype='f8')
+    #    if scl and not np.all(data==0):
+    #        data/=abs(data).max()
+    #        data*=(2**15-1)
+    #        
+    #    data=np.rint(data).astype('i2')
+    #    dataBytes=bytes(data)
+    #    N=len(dataBytes)
+    #    Nstr=str(N)
+    #    return ( "#{0}{1}".format(len(Nstr), Nstr),  dataBytes )
+    #    #return "#{0}{1}{2}".format(len(Nstr), Nstr), data.tobytes())
+
+    def uploadWaveform(self,y, scl=1., chanNum=0):
         if len(y)> 2**14:
             print("Uploading waveforms of lenght > 2^14 usually doesn't have expected results.")
         #datStr=self.__super__.array_to_text_block(y, 0, 16383, scl=scl)
         #datStr=self.array_to_text_block(y, scl=scl)
         datBlkHead,datBlk=self.array_to_binary_block(y, scl=scl)
         #print(datStr)
-        head = bytes(":SOURce{}:TRACe:DATA:DAC16 VOLATILE,END,{}".format(chanNum+1,datBlkHead), 'utf-8')
+        head = bytes(f":SOURce{chanNum+1}:TRACe:DATA:DAC16 VOLATILE,END,{datBlkHead}", 'utf-8')
         print(head)
         self.handle.write_raw(head + datBlk)
         #self.handle.write("DATA {},{}".format(name,datStr))
         sleep(1); #Hopefully this isn't needed?
         self.curWaveform[chanNum] = y
 
-    def setOutputWaveform(self, y, sampleRate = 1e6,chanNum=0, bUseFullScale=False):
-        print("don't use setOutputWaveform until we can work out what is wrong with setPeriod")
-        self.setOutputState(False, chanNum=chanNum)
-        if bUseFullScale:
-            self.setLH(y.min(), y.max())
-            y = (y - (y.max() + y.min)/2  )* 2/(y.max()-y.min()) 
+    #def setOutputWaveform(self, y, sampleRate = 1e6,chanNum=0, bUseFullScale=False):
+    #    print("don't use setOutputWaveform until we can work out what is wrong with setPeriod")
+    #    self.setOutputState(False, chanNum=chanNum)
+    #    if bUseFullScale:
+    #        self.setLH(y.min(), y.max())
+    #        y = (y - (y.max() + y.min)/2  )* 2/(y.max()-y.min()) 
 
-        self.uploadWaveform(y, chanNum=chanNum)
-        self.setRate(sampleRate, chanNum=chanNum)
-        errStr=self.getErr()
-        errVal=int(errStr.split(',')[0])
-        #if errVal!= 0 and errVal != -221:
-        if errVal:
-            raise ValueError(errStr.split(',')[1])
-        
-        self.setOutputState(True, chanNum=chanNum)
+    #    self.uploadWaveform(y, chanNum=chanNum)
+    #    self.setRate(sampleRate, chanNum=chanNum)
+    #    errStr=self.getErr()
+    #    errVal=int(errStr.split(',')[0])
+    #    #if errVal!= 0 and errVal != -221:
+    #    if errVal:
+    #        raise ValueError(errStr.split(',')[1])
+    #    
+    #    self.setOutputState(True, chanNum=chanNum)
 
     def uploadAndSetWaveform(self, t,x,chanNum=0):
         """Simple upload a waveform and set it active.
 
-        NEEDS UPDATING
+        No longer needed??
         """
         raise NotImplementedError("Needs updating!")
         figure()
@@ -204,6 +205,13 @@ class RigolFG(FG.FG):
     def getSampleRate(self, chanNum=0):
             return float(self.handle.query(f"SOUR{chanNum+1}:FUNC:SEQ:SRAT?"))
 
+    def setPeriod(self, period, chanNum=-1):
+        if chanNum == -1:
+            self.setPeriod(period, 0)
+            self.setPeriod(period, 1)
+        else:
+            self.setRate( len(self.curWaveform[0])/period )
+
     def setLoad(self, load=50, chanNum=0):
         """If load is -ve, infinite is assumed
         """
@@ -215,8 +223,11 @@ class RigolFG(FG.FG):
         self.handle.write(f'OUTP{chanNum+1}:LOAD {loadStr}');
 
     def setInverted(self, bInvert=True, chanNum=0):
-        super().setInverted(bInvert,)
-        #sleep(1)
+        if chanNum>0:
+            self.handle.write("OUTP{}:POL {}".format(int(chanNum+1), "INV" if bInvert else "NORM"))
+        else:
+            self.handle.write("OUTP:POL {}".format("INV" if bInvert else "NORM"))
+
 if __name__=="__main__":
     import numpy as np
     addr='USB0::0x1AB1::0x0643::DG9A210800149::INSTR'

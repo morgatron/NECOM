@@ -1,3 +1,10 @@
+""" Local/Remote interfaces to the picoscope, mainly for streaming purposes.
+
+Lots of historical baggage still here.
+
+"""
+
+
 from picoscope import ps5000a
 import numpy as np
 import zmq
@@ -19,7 +26,7 @@ def quickSetup(self,
         nCaps=1, nMemorySegments=-1, 
         resolution=None,
         ):
-    """Set most parameters in one function
+    """Set most scope parameters in one function
     @chanA(BCD)Params: dictionary of arguments to setChannel. Note that if the dictionary is None, the channel will be disabled. 
     @sampleRate: the desired samples per second for the scope, in Hz
     @acqTime: the length of time (in seconds) to record after each trigger.
@@ -115,7 +122,7 @@ glbCONTINUOUS=False
 glbSTREAMING=False
 from numpy import random
 
-def setHWM(newHWM):
+def setHWM(newHWM): # "High Water Mark" of the publishing socket.
     global glbSOCKET_PUBSUB
     glbSOCKET_PUBSUB.set_hwm(newHWM)
     if not glbLOCAL:
@@ -144,8 +151,6 @@ def startMonitoring():
 
         print('chked and reciewved')
         sleep(0.1)
-        #glbPS.stop()
-        #if bPostRaw:
         if glbSTREAMING:
             acquireStreamingLatest(bPUBLISH=True)
             #acquireRawStreaming(bPUBLISH=True)
@@ -159,6 +164,7 @@ def startMonitoring():
                     startAcquisition()
                 else: 
                     raise e
+        sleep(0.1)
 
 def initRemote():
     context = zmq.Context()
@@ -214,6 +220,7 @@ scopeDefaults=dict(
     resolution=15
     )
 curAcqD=scopeDefaults.copy() 
+
 def setScopeParamsLocal(parD):
     """
     This should do something a little different depending on whether we're streaming or in block mode
@@ -231,14 +238,6 @@ def setScopeParamsLocal(parD):
             resolution= curAcqD['resolution'],
             )
     glbPS.quickSetup(**scpDict)
-
-    #else could send information to the other process
-
-#def checkRemote():
-#    """Somehow check the socket to see if it's intact"""
-#    pass;
-
-
 
 def setupScopeRemote(paramD):
     print("setting scope parameters remotely")
@@ -259,7 +258,6 @@ def checkForPublished(topicFilter=""):
         return topic, pickle.loads(msg)
     else:
         print(' no')
-
 
 def setRepeating(state=True):
     global glbCONTINUOUS
@@ -293,52 +291,35 @@ def checkAndRecieveRemoteCommand():
                 glbPS.waitReady()
             except OSError as e:
                 if e.args[0].find("PICO_CANCELLED")>=0 or e.args[0].find("NO_SAMPLES")>=0:
-                    pass;
+                    pass
                 else:
                     raise e
             
-            D=param #Should be dictionary for 
             try:
+                bStreamingWasStopped = False
                 if glbSTREAMING:
-                    stop()
-                setScopeParamsLocal(D)
-                startStreaming(bKeepSampsPerSeg=True)
-                print("Updated scope parameters: {}".format(D))
+                    bStreamingWasStopped = True
+                    stopStreaming()
+                setScopeParamsLocal(param)
+                print("Updated scope parameters: {}".format(param))
+                if bStreamingWasStopped:
+                    print("restarting streaming")
+                    startStreaming(bKeepSampsPerSeg=True)
                 #glbSOCKET_PAIR.send(b'OK')
                 replyOk()
             except OSError as e:
                 glbSOCKET_PAIR.send(bytes('err {}'.format(e), 'utf-8') )
                 print("scope error: {}".format(e)) 
-
         elif cmd==b'raw': #Acquire some data. This needs updating
-            replyOk()
-            #glbSOCKET_PAIR.send(b'OK')
-            if len(st)>1:
-                args=pickle.loads(st[1])
-            else:
-                args={}
             glbPS.stop()
-            acquireRaw(bPUBLISH=True, **args) #this should prob just be **param, not args
-            #msg=b'raw '+ pickle.dumps(acquireRaw(**args))
-            #glbSOCKET_PAIR.send(msg)
-            #glbSOCKET_PUBSUB.send(msg)
-
-        elif cmd==b'repeat':
-            if param:
-                startStreaming()
-                print("Start streaming")
-            else:
-                stop()
-                print("stopped")
-            #setRepeating(int(st[1]))
-            #print("set repeating to {}".format(int(st[1])))
+            acquireRaw(bPUBLISH=True, **param) #this should prob just be **param, not args
             replyOk()
-        elif cmd==b'stop':
-            stop()
+        elif cmd==b'stop': # Stop acquring
+            stopStreaming()
             replyOk()
         elif cmd==b'monitorStop':
             replyOk()
-            return 1
+            return 1 # returning true kills the monitoring that is calling this function
         elif cmd==b'startStreaming':
             startStreaming(**param)
             replyOk()
@@ -435,6 +416,7 @@ def startStreamingThread(*args, **kwargs):
             startStreaming()
         while glbSTREAMING:
             acquireStreamingLatest(bPUBLISH=True)
+            sleep(0.1)
     startStreamingThread.thread= threading.Thread(target=streamingRecv, args=args, kwargs=kwargs)
     startStreamingThread.thread.setDaemon(True)
     startStreamingThread.thread.start()
@@ -655,7 +637,7 @@ def acquireStreamingLatest(bPUBLISH=True):
     dt=glbPS.sampleInterval*glbPS.Nds
     return t, datL, dt
 
-def stop():
+def stopStreaming():
     if glbLOCAL:
         glbPS.stop()
         glbSTREAMING=False
