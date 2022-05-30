@@ -13,6 +13,8 @@ from copy import deepcopy
 from pulse_patterns import generateTriggerWaveforms, makePulseTrain
 from rigol.rigolfg import RigolFG
 from functools import lru_cache
+import fg_addr
+
 #import fgAgilent
 #from coils import Coils
 #from oven import Oven
@@ -70,7 +72,7 @@ def setupOven(set_temp, pid_params=None):
 
 
 @lru_cache(1)
-def setupPumpAndBzPulses(tTotal, tPumpStart, tPumpWidth, tMagStart, tMagWidth):
+def setupPumpAndNucPulses(tTotal, tPumpStart, tPumpWidth, tMagStart, tMagWidth):
     sampRate = 1000000# ??
     #sampRate = pulseFG.sampRate 
     
@@ -93,7 +95,7 @@ def setupExperiment():
 def _setupExperiment(params):
     params=deepcopy(params)
     setupOven(**params.oven)
-    setupPumpAndBzPulses(**params.pump, **params.Bz_pulse)
+    setupPumpAndNucPulses(**params.pump, **params.Bz_pulse)
     setupDCFields(**params.dc_fields)
 
     #acq.setScopeParams(acqTime=params.totalTime)

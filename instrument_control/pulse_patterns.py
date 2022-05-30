@@ -8,11 +8,11 @@ import numpy as np
 
 ##### TRIGGER PATTERNS:
 from functools import partial
-def makePulseTrain(startTimes, pulseWidths, pulseHeights, sampleRate, Nsamples, pulseFunc=partial(util.tophat, bDigitizeFix=True)):
+def makePulseTrain(startTimes, pulseWidths, pulseHeights, sampleRate, Nsamples, pulseFunc=partial(util.tophat, bDigitizeFix=True), smthFact=4):
     """Takes a list of pulse times, widths and heights and returns a digitized waveform with those pulses represented.
 
     """
-    Nsamples=int(Nsamples)
+    Nsamples=smthFacte*int(Nsamples)
     Npulses=len(startTimes)
     if not hasattr(pulseWidths, "__iter__"):
         pulseWidths=[pulseWidths]*Npulses
@@ -28,6 +28,7 @@ def makePulseTrain(startTimes, pulseWidths, pulseHeights, sampleRate, Nsamples, 
         plsShape=pulseFunc(t, tWidth, startT+tWidth/2., bDigitizeFix=True)*height
         #print("area of pls: {:.5f}".format(np.sum(plsShape)))
         y+=plsShape
+    y= utils.smooth(y, window_len=smthFact)[int(smthFact/2)::smthFact]
     return t, y
 
 def generateTriggerWaveforms(pulseTimingParams, pulseSeqDesc, Npts, sampleRate):
@@ -45,3 +46,35 @@ def generateTriggerWaveforms(pulseTimingParams, pulseSeqDesc, Npts, sampleRate):
     initTrigWvfm=util.tophat(t, initPulseWidth, initPulseWidth/2+ 1./sampleRate )
     return t, pumpTrigWvfm, initTrigWvfm
 
+def make_Bz_measurement_pattern(sampleRate, Ntau, tau, to_skip, pulse_width=5e-6, pulse_height=3.0 ):
+    """ Pulse pattern to measure Bz field seen by alkali, by giving them a little side-ways kick once in a while.
+    """
+    startTimes = tau*np.arange(0,Ntau)
+    pulseWidths = Ntau*[pulse_width]
+    pulseHeights = [2*(0.5-k%2)*pulse_height  for k in range(Ntau)]
+    tx,y1=makePulseTrain(startTimes=startTimes, 
+                            pulseWidths=pulseWidths, 
+                            pulseHeights= pulseHeights,
+                            sampleRate=sampleRate,
+                            Nsamples=,
+                            )
+  
+    return tx, y1
+
+def make_pump_alignment_optimsation_pattern(sampleRate, Nsamples, tau, to_skip, pulse_wdith, pulse_height ):
+    """ Pattern to quickly optimise pumping of alkali.
+
+    Strategy is to pin alkali off axis briefly to see how big the signal is.
+    """
+    N_pulses =
+    startTimes = f(tau, to_skip)
+    pulseWidths = Npulses*[pulse_width]
+    pulseHeights = []
+    tx,y1=makePulseTrain(startTimes=startTimes, 
+                            pulseWidths=pulseWidths, 
+                            pulseHeights= pulseHeights[:,0],
+                            sampleRate=,
+                            Nsamples=,
+                            )
+  
+    return tx, y1, y2,y3
