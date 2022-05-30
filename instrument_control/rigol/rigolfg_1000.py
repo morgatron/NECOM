@@ -183,7 +183,7 @@ class RigolFG1000(FG.FG):
 if __name__=="__main__":
     import numpy as np
     
-    fg=RigolFG();
+    fg=RigolFG1000();
     def sendPulse(tDelay=1, tWidth=3000, tTotal=4096):
 
         t=np.linspace(0,tTotal,tTotal*20)*1.0;
