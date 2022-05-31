@@ -11,6 +11,17 @@ def list_instruments():
     resL=rm.list_resources()
     return resL
 
+def scaleTo(data, sclTo):
+    try:
+        valRange= sclTo[1] - sclTo[0]
+        lowV = data.min()
+        highV = data.max()
+        data = (data-lowV)/np.abs(highV-lowV) #Now between 0 and 1
+        return data*valRange + sclTo[0]
+
+    except TypeError:
+        return data/abs(data).max()*sclTo
+
 class FG(object):
     __metaclass__ = abc.ABCMeta
     #ip_address="136.159.248.161"
@@ -19,37 +30,27 @@ class FG(object):
     rm=None
     numChans=1.
     
-    @staticmethod
-    def scaleTo(data, sclTo):
-        try:
-            valRange= sclTo[1] - sclTo[0]
-            lowV = data.min()
-            highV = data.max()
-            data = (data-lowV)/np.abs(highV-lowV) #Now between 0 and 1
-            return data*valRange + sclTo[0]
-
-        except TypeError:
-            return data/ans(data).max()*sclTo
+ 
 
     @staticmethod
-    def array_to_text_block(data, sclTo = [-1, 1], outputDtype = 'i2'):
+    def array_to_text_block(data, sclTo = [-1, 1]):
         """We'll assume it'll be uploaded as integers"""
         data=np.array(data,dtype='f8')
         if sclTo is not None:
-            data = FG.sclTo(data, sclTo)
-        data *= (2**15 -1)
-        dataInt=np.rint(data).astype(outputDtype)
-        datStr=','.join([str(num) for num in dataInt])
+            data = scaleTo(data, sclTo)
+        #data *= (2**15 -1)
+        #dataInt=np.rint(data).astype(outputDtype)
+        datStr=','.join(['{:.3f}'.format(num) for num in data])
         return datStr
 
     @staticmethod
-    def array_to_binary_block(data, sclTo=[-1,1]):
+    def array_to_binary_block(data, sclTo=[-1,1], dataMax = 2**13-1):
         data=np.array(data)
-        if sclTo:
-            data = FG.scaleTo(data, sclTo)
+        if sclTo is not None:
+            data = scaleTo(data, sclTo)
             #data/=abs(data).max()
-        data *= (2**15 -1)
-        data=np.rint(data).astype('i2')
+        data *= dataMax
+        data=np.rint(data + dataMax).astype('u2')
         dataBytes=bytes(data)
         N=len(dataBytes)
         Nstr=str(N)
@@ -63,8 +64,9 @@ class FG(object):
         if address is not None:
             self.addr=address
         #self.handle=visa.instrument("TCPIP::{0}::INSTR".format(self.ip_address));
-        rm=visa.ResourceManager();
-        self.handle=rm.open_resource("{0}".format(self.addr));
+        if self.rm is None:
+            self.rm=visa.ResourceManager();
+        self.handle=self.rm.open_resource("{0}".format(self.addr));
         self.configureHandle()
 
     @abc.abstractmethod
@@ -84,7 +86,7 @@ class FG(object):
         if addr is not None:
             self.addr=addr
         self.connect();
-        self.curWaveform = {}
+        self.curWaveform = [None]*self.numChans
         
 
 
@@ -133,22 +135,22 @@ class FG(object):
         for chNum in range(self.numChans):
             self.setOutputState(False, chNum);
 
-    def setOutputWaveForm(self, t, x, chNum=0, bUseFullScale=True):
+    def setOutputWaveform(self, t, x, chanNum=0, bUseFullScale=True):
         """Upload a waveform (t, x) and set it as active on channel chNum
         """
-        self.setOutputState(0, chNum)
+        self.setOutputState(0, chanNum)
         if bUseFullScale:
             self.uploadWaveform(x, sclTo=[-1,1])
-            self.setLH( x.min(), x.max() )
+            self.setLowHigh( x.min(), x.max() )
         else:
             self.uploadWaveform(x, sclTo=None)
-        self.setPeriod(t[-1]-t[0])
+        self.setRate(1/(t[1]-t[0]))#Period(t[-1]-t[0])
         errStr=self.getErr()
         errVal=int(errStr.split(',')[0])
         #if errVal!= 0 and errVal != -221:
         if errVal:
             raise ValueError(errStr.split(',')[1])
-        self.setOutputState(1, chNum)
+        self.setOutputState(1, chanNum)
 
     def setLH(self, low, high, chanNum=0):
         #self.setAmp(0.01)
@@ -164,7 +166,7 @@ class FG(object):
             self.setLowHigh(newLow, newHigh,chanNum=chanNum)
             self.setInverted(True, chanNum=chanNum);
         else:
-            self.setInverted(False);
+            self.setInverted(False, chanNum=chanNum);
             self.setOffset(offs, chanNum=chanNum)
             sleep(0.1)
             self.setLowHigh(low,high, chanNum=chanNum)
