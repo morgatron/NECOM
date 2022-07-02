@@ -7,16 +7,19 @@ from numpy import pi
 import numpy as np
 import pdb
 
-#from . import FG
-import FG
+try:
+    from . import FG
+except ImportError:
+    import FG
 def array_to_binary_block(data):
     dataMax = 2**13 -1
     data=np.array(data)
     if np.max(np.abs(data))>1:
         raise ValueError("data needs to be within -1,1 for uploading")
     data += 1
-    data *= dataMax
+    data *= dataMax +0
     data=np.rint(data).astype('u2')
+    print(f"final data min/max: {data.min(), data.max()}")
     dataBytes=bytes(data)
     N=len(dataBytes)
     Nstr=str(N)
@@ -39,7 +42,7 @@ class RigolFG1000(FG.FG):
         normalWrite=self.handle.write
         def newWrite(*args, **kwargs):
             normalWrite(*args, **kwargs)
-            sleep(.2)
+            sleep(.5)
         self.handle.write=newWrite
 
     def setOutputState(self, bOn, chanNum=0):
@@ -59,7 +62,6 @@ class RigolFG1000(FG.FG):
    #         #data/=abs(data).max()
    #         #data*=0.5#8191
    #     dataInt=np.rint(data).astype('f8')
-   #     #pdb.set_trace()
    #     datStr=','.join([str(num) for num in dataInt])
    #     #print(datStr[:100])
    #     return datStr
@@ -98,7 +100,7 @@ class RigolFG1000(FG.FG):
         print(y.max(), y.min())
         pointsSent = 0
         while pointsSent < Npts:
-            print(f"pts left: {pointsSent}")
+            print(f"pts Sent: {pointsSent}")
             datBlkHead,datBlk= array_to_binary_block(y[pointsSent:pointsSent+maxBlkSize])
             pointsSent += maxBlkSize
             if pointsSent >= Npts:
@@ -152,6 +154,8 @@ class RigolFG1000(FG.FG):
 
     def setLowHigh(self, low, high, chanNum=0):
         #self.handle.write('VOLT:LOW {:.3f}'.format(low) )
+        if abs(low)>10 or abs(high)>10 or low>high:
+            raise ValueError(f"bad range: {low, high}")
         self.handle.write(f':SOUR{chanNum+1}:VOLT:LOW {low:.5f}' )
         #sleep(1)
         #self.handle.write('VOLT:HIGH {:.3f}'.format(high) )
@@ -179,25 +183,39 @@ if __name__=="__main__":
     import fg_addr
     t= linspace(0,1e-3, 12000)
     y = sin(2*pi*t*3000) 
-    fg=RigolFG1000(fg_addr.pump);
-    def sendPulse(tDelay=1, tWidth=200, tTotal=4096):
+    #fg1000=RigolFG1000(fg_addr.pump);
+    def sendAlternatingPulses(fg, amp=1, tDelay=10e-6, tWidth=20e-6, tTotal=3000e-6, Npts=20000, chanNum=0):
 
-        t=np.linspace(0,tTotal,tTotal*20)*1.0;
-        y=np.where( (t>tDelay) & (t<tDelay+tWidth), 5.0, 0.)
+        t=np.linspace(0,tTotal*2, Npts)*1.0;
+        y1 = np.where( (t>tDelay) & (t<tDelay+tWidth), amp, 0.)
+        y2 = np.where( (t>tDelay+tTotal) & (t<tDelay+tWidth+tTotal), -amp, 0.)
+        y = y1 + y2
 
-        fg.setLoad(50,0)
         from pylab import plot,show
         plot(t,y)
-        fg.uploadAndSetWaveform(t, y,chNum=0)
+        fg.setOutputWaveform(t, y,chanNum=chanNum)
         #fg.uploadWaveform(y, chanNum=0);
         #fg.setPeriod(tTotal*1e-6);
         #fg.setLowHigh(0,8)
-        print(fg.handle.query("VOLT:OFFS?"))
         #print (rfg.setOutputWaveForm(t, y2, 1))
         #fg.allOn()
         #print("stuff")
-        show()
+    def sendPulse(fg, amp=1, tDelay=1e-6, tWidth=200e-6, tTotal=4096e-6, chanNum=0):
 
-    #sendPulse(0.,10.,100)
+        t=np.linspace(0,tTotal,20000);
+        y=np.where( (t>tDelay) & (t<tDelay+tWidth), amp, 0.)
+
+        #fg.setLoad(50,0)
+        from pylab import plot,show
+        plot(t,y)
+        #show()
+        fg.setOutputWaveform(t, y,chanNum=chanNum)
+        #fg.uploadWaveform(y, chanNum=0);
+        #fg.setPeriod(tTotal*1e-6);
+        #fg.setLowHigh(0,8)
+        #print (rfg.setOutputWaveForm(t, y2, 1))
+        #fg.allOn()
+        #print("stuff")
+    #sendPulse(fg1000, 0.,10.,100)
     #fg.setTriggerDelay(200*1e-6)
     #fg.setOffset(-0.01);

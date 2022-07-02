@@ -68,6 +68,7 @@ class FG(object):
             self.rm=visa.ResourceManager();
         self.handle=self.rm.open_resource("{0}".format(self.addr));
         self.configureHandle()
+        self.check_connection();
 
     @abc.abstractmethod
     def configureHandle(self):
@@ -79,7 +80,7 @@ class FG(object):
         normalWrite=self.handle.write
         def newWrite(*args, **kwargs):
             normalWrite(*args, **kwargs)
-            sleep(.5)
+            sleep(.2)
         self.handle.write=newWrite
 
     def __init__(self, addr=None):
@@ -139,18 +140,17 @@ class FG(object):
         """Upload a waveform (t, x) and set it as active on channel chNum
         """
         self.setOutputState(0, chanNum)
+        self.checkErr()
         if bUseFullScale:
-            self.uploadWaveform(x, sclTo=[-1,1])
-            self.setLowHigh( x.min(), x.max() )
+            self.uploadWaveform(x, sclTo=[-1,1], chanNum=chanNum)
+            self.checkErr()
+            self.setLowHigh( x.min(), x.max(), chanNum=chanNum )
         else:
-            self.uploadWaveform(x, sclTo=None)
-        self.setRate(1/(t[1]-t[0]))#Period(t[-1]-t[0])
-        errStr=self.getErr()
-        errVal=int(errStr.split(',')[0])
-        #if errVal!= 0 and errVal != -221:
-        if errVal:
-            raise ValueError(errStr.split(',')[1])
-        self.setOutputState(1, chanNum)
+            self.uploadWaveform(x, sclTo=None, chanNum=chanNum)
+        self.checkErr()
+        self.setRate(1/(t[1]-t[0]), chanNum=chanNum)#Period(t[-1]-t[0])
+        self.checkErr()
+        self.setOutputState(1, chanNum=chanNum)
 
     def setLH(self, low, high, chanNum=0):
         #self.setAmp(0.01)
@@ -182,7 +182,12 @@ class FG(object):
     
     def getErr(self):
         return self.handle.query("SYST:ERR?")
-    
+
+    def checkErr(self):    
+        errStr=self.getErr()
+        errVal=int(errStr.split(',')[0])
+        if errVal:
+            raise ValueError(f"Error val{errVal}: {errStr.split(',')[1]}")
 
     # OPTIONAL METHODS -----------------
     def setInverted(self, bInvert=True, chanNum=0):

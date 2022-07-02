@@ -20,13 +20,11 @@ def array_to_binary_block(data):
     N=len(dataBytes)
     Nstr=str(N)
     return ( "#{0}{1}".format(len(Nstr), Nstr),  dataBytes )
+
 class RigolFG900(FG.FG):
     #addr="USB0::0x1AB1::0x0588::DG1D124004333::INSTR"
     #addr="USB0::0x1AB1::0x0643::DG9A210800150::INSTR"
-
     numChans=2 
-    
-
 
     def configureHandle(self):
         self.handle.query_delay=0.2 #Used to use 0.5 s here
@@ -167,16 +165,34 @@ if __name__=="__main__":
     import fg_addr
     t= linspace(0,1e-3, 4000)
     y = sin(2*pi*t*3000) 
-    fg=RigolFG900(fg_addr.field2);
-    def sendPulse(tDelay=1, tWidth=200, tTotal=4096):
+    fg900=RigolFG900(fg_addr.field2);
+    def sendAlternatingPulses(fg, amp=1, tDelay=10e-6, tWidth=20e-6, tTotal=3000e-6, chanNum=1):
 
-        t=np.linspace(0,tTotal,tTotal*20)*1.0;
-        y=np.where( (t>tDelay) & (t<tDelay+tWidth), 5.0, 0.)
+        t=np.linspace(0,tTotal*2, 20000 )*1.0;
+        y1 = np.where( (t>tDelay) & (t<tDelay+tWidth), amp, 0.)
+        y2 = np.where( (t>tDelay+tTotal) & (t<tDelay+tWidth+tTotal), -amp, 0.)
+        y = y1 + y2
 
         fg.setLoad(50,0)
         from pylab import plot,show
         plot(t,y)
-        fg.uploadAndSetWaveform(t, y,chNum=0)
+        fg.setOutputWaveform(t, y,chanNum=chanNum)
+        #fg.uploadWaveform(y, chanNum=0);
+        #fg.setPeriod(tTotal*1e-6);
+        #fg.setLowHigh(0,8)
+        #print (rfg.setOutputWaveForm(t, y2, 1))
+        #fg.allOn()
+        #print("stuff")
+        show()
+    def sendPulse(fg, amp=1, tDelay=1, tWidth=200, tTotal=4096, chanNum=0):
+
+        t=np.linspace(0,tTotal,50000)*1.0e-6;
+        y=np.where( (t>tDelay) & (t<tDelay+tWidth), amp, 0.)
+
+        fg.setLoad(50,0)
+        from pylab import plot,show
+        plot(t,y)
+        fg.uploadAndSetWaveform(t, y,chanNum=chanNum)
         #fg.uploadWaveform(y, chanNum=0);
         #fg.setPeriod(tTotal*1e-6);
         #fg.setLowHigh(0,8)

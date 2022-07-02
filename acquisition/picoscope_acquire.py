@@ -279,11 +279,11 @@ def recvCommand():
             param=None
         return cmd, param
     else:
-        print("... none")
         return None, None
 
 def checkAndRecieveRemoteCommand():
-    print("checking for remote command: ",end="", flush=True)
+    #print("checking for remote command: ",end="", flush=True)
+    print(".")
     cmd,param=recvCommand()
     if cmd is not None:
         if cmd==b'scp': #Param is a new scope paramaters
