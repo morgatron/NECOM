@@ -7,6 +7,7 @@ from box import Box
 from rigol.rigolfg_1000 import RigolFG1000
 from rigol.rigolfg_900 import RigolFG900
 import numpy as np
+from box import Box
 import util
 
 
@@ -18,26 +19,6 @@ import util
 #        print(f"Couldn't open {name} FG, because of {e}")
 #
 
-class DummyFG(FG.FG):
-    def connect(self):
-        pass;
-    def __init__(self):
-        pass;
-    def close(self):
-        pass;
-    def setTriggerDelay(self, delay):
-        pass;
-    def setTriggerMode(self, mode):
-        pass;
-    def setOutputWaveForm(self, t, x, chNum):
-        pass;
-    def setOutputState(self, bOn, chNum=0):
-        pass;
-    def configureHandle(self):
-        pass;
-    def uploadWaveform(self, wvfm, name="VOLATILE"):
-        pass;
-
 # fgs.pump.setWaveform(x)
 # fgs.pump.setPattern(x)
 # fgs.setPatterns()
@@ -45,6 +26,68 @@ class DummyFG(FG.FG):
 # fgs.updateWaveforms()
 # fgs.updatePatterns()
 #
+
+
+class Channel(object):
+    """Represent a single FG Channel
+    
+    All it does is pass on all calls to the held FG object with the channel number set.
+    """
+    
+    def __init__(self, fg, chanNum):
+        self.fg = fg
+        self.chanNum = chanNum
+
+    def __getattribute__(self,name):
+        attr = object.__getattribute__(self.fg, name)
+        if hasattr(attr, '__call__'):
+            def newfunc(*args, **kwargs):
+                print('before calling %s' %attr.__name__)
+                result = attr(*args, chanNum=chanNum, **kwargs) #?
+                print('done calling %s' %attr.__name__)
+                return result
+            return newfunc
+        else:
+            return attr
+
+
+dg1000 = RigolFG1000("USB0::0x1AB1::0x0642::DG1ZA193403439::INSTR"),# (DG1022)
+dg900_A = RigolFG900("USB0::0x1AB1::0x0643::DG9A210800150::INSTR"), # (first DG952) By, Bz
+dg900_B = RigolFG900("USB0::0x1AB1::0x0643::DG9A210800149::INSTR")# (second DG952)
+
+chs = Box(
+    pump = Channel(dg1000, chanNum=0),
+    hardBz = Channel(dg1000, chanNum=1),
+    Bx = Channel(dg900_B, chanNum=0),
+    By = Channel(dg900_A, chanNum=0),
+    Bz = Channel(dg900_A, chanNum=1),
+)
+
+def setPulsePatterns(patternD, othersOff=True):
+    """
+    
+    patternD is a dict of channel name strings and pulse-patterns. 
+    E.g. patternD = {'pump': {'startTimes': [1e-6, 100e-6], 
+                            'pulseWidths':5e6,
+                            'pulseHeights': [2,-2]}
+                            'sapmleRate' : 1e6, 
+                            'totalTime' : 4e-3
+                            }
+                    'hardBz':...
+                    }
+    """
+    all_chan_names = chs.keys()
+    used_chan_names = patternD.keys()
+    unused_chan_names = set(all_chan_names).difference(used_chan_names)
+    for chan_name, pulse_desc in patternD:
+        chs[chan_name].setPulsePattern(pulse_desc)
+    for chan_name in unused_chan_names:
+        chs[chan_name].setOutput(0)
+
+def allOff():
+    for chan in chs.keys():
+        chan.setOutput(0)
+
 class PmFgController(object):
     rateX=250000000/10
     rateY=250000000/10
@@ -81,9 +124,9 @@ class PmFgController(object):
 
     
     def setPulsePattern(self, chanName, times, widths, heights, total_t):
-        fg, chaNum = self.chans[chanName]
+        fg, chanNum = self.chans[chanName]
         t, y = makePulseTrain(pulse_widths, pulse_heights, sample_rate, Nsamples, smthFact=8)
-        fg.uploadWaveform()
+        fg.setOutputWaveform(t, y, chanNum=chanNum)
     
     #OLD STUFF===============
     def setWaveForms(self, t,VX, VY, VZ, bReorderOnly=False):

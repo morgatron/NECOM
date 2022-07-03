@@ -5,6 +5,7 @@ import numpy as np
 import abc
 import pdb
 from time import sleep
+from functools import partial
 
 def list_instruments():
     rm=visa.ResourceManager();
@@ -21,6 +22,29 @@ def scaleTo(data, sclTo):
 
     except TypeError:
         return data/abs(data).max()*sclTo
+
+def makePulseTrain(startTimes, pulseWidths, pulseHeights, sampleRate, Nsamples, pulseFunc=partial(util.tophat, bDigitizeFix=True), smthFact=4):
+    """Takes a list of pulse times, widths and heights and returns a digitized waveform with those pulses represented.
+
+    """
+    Nsamples=smthFacte*int(Nsamples)
+    Npulses=len(startTimes)
+    if not hasattr(pulseWidths, "__iter__"):
+        pulseWidths=[pulseWidths]*Npulses
+    if not hasattr(pulseHeights, "__iter__"):
+        pulseHeights=[pulseHeights]*Npulses
+    if not (len(startTimes)==len(pulseWidths)==len(pulseHeights) ):
+        raise ValueError("All sequences should be the same length, OR scalars")
+    #t=np.linspace(0,tSeqTotal,tSeqTotal*sampleRate)*1.0;
+    t=np.arange(Nsamples, dtype='f8')/sampleRate
+    y=np.zeros(Nsamples, dtype='f8')
+    for startT, tWidth, height in zip(startTimes, pulseWidths, pulseHeights):
+        #y+=np.where( (t>startT) & (t<startT+tWidth), height, 0.)
+        plsShape=pulseFunc(t, tWidth, startT+tWidth/2., bDigitizeFix=True)*height
+        #print("area of pls: {:.5f}".format(np.sum(plsShape)))
+        y+=plsShape
+    y= utils.smooth(y, window_len=smthFact)[int(smthFact/2)::smthFact]
+    return t, y
 
 class FG(object):
     __metaclass__ = abc.ABCMeta
@@ -135,6 +159,7 @@ class FG(object):
         for chNum in range(self.numChans):
             self.setOutputState(False, chNum);
 
+    
     def setOutputWaveform(self, t, x, chanNum=0, bUseFullScale=True):
         """Upload a waveform (t, x) and set it as active on channel chNum
         """
