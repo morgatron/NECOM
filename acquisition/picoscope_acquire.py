@@ -186,7 +186,7 @@ def subscribe(topicFilter=None):
     #glbSOCKET_PUBSUB.setsockopt(zmq.HWM,1)
     sleep(0.2)
 
-def close():
+def closeSockets():
     if glbLOCAL:
         glbPS.close()
     glbSOCKET_PAIR.close()
@@ -253,7 +253,7 @@ def setupScopeRemote(paramD):
 def checkForPublished(topicFilter=""):    
     #print("checking for published: ", end='')
     if glbSOCKET_PUBSUB.poll(10):
-        print(' suceeded')
+        print('.', end='')
         topic,msg= glbSOCKET_PUBSUB.recv().split(b' ', 1)
         return topic, pickle.loads(msg)
     else:
@@ -644,6 +644,19 @@ def stopStreaming():
     else:
         glbSTREAMING=False
         sendCmd('stop')
+def close():
+    stopStreaming()
+    stopMonitoring()
+    try:
+        startStreamingThread.thread._stop()
+        startMonitorThread.thread._stop()
+    except:
+        pass
+    closeSockets()
+    try:
+        glbPS.close()
+    except:
+        pass
 
 if __name__=="__main__":
     #import pyqtgraph as pg
@@ -651,6 +664,8 @@ if __name__=="__main__":
     #from pylab import *
     #import time
     init(bRemote=False)
+    startMonitorThread()
+    startStreamingThread()
     print("initialised PS")
     #startStreaming()
     #print("Streaming started")

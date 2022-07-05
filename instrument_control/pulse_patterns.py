@@ -2,15 +2,15 @@
 # pmANU relevant parameters: 
 
 """
-from tkinter import W
-import util
+#from tkinter import W
+from . import util
 import numpy as np
 import pdb
 
 
 ##### TRIGGER PATTERNS:
 from functools import partial
-def makePulseTrain(startTimes, pulseWidths, pulseHeights, sampleRate,tTotal=None, Nsamples=None, pulseFunc=partial(util.tophat, bDigitizeFix=True), smthFact=4, endCutPts=None, startCutPts=0):
+def makePulseTrain(startTimes, pulseWidths, pulseHeights, sampleRate,tTotal=None, Nsamples=None, pulseFunc=partial(util.tophat, bDigitizeFix=True), smthFact=4, endCutPts=0, startCutPts=0):
     """Takes a list of pulse times, widths and heights and returns a digitized waveform with those pulses represented.
 
     """
@@ -27,7 +27,7 @@ def makePulseTrain(startTimes, pulseWidths, pulseHeights, sampleRate,tTotal=None
     if not (len(startTimes)==len(pulseWidths)==len(pulseHeights) ):
         raise ValueError("All sequences should be the same length, OR scalars")
     #t=np.linspace(0,tSeqTotal,tSeqTotal*sampleRate)*1.0;
-    pdb.set_trace()
+    #pdb.set_trace()
     t=np.arange(Nsamples, dtype='f8')/sampleRate/smthFact
     y=np.zeros(Nsamples, dtype='f8')
     for startT, tWidth, height in zip(startTimes, pulseWidths, pulseHeights):
@@ -40,8 +40,10 @@ def makePulseTrain(startTimes, pulseWidths, pulseHeights, sampleRate,tTotal=None
     #if startPadPoints>0:
     #    y = np.hstack([np.zeros(startPadPts, dtype=y.dtype), y])
     #    t = np.hstack([np.zeros(startPadPts, dtype=y.dtype), y])
+    if endCutPts < 0:
+        raise ValueError("endCutPts must be +ve (can't do padding yet)")
     if endCutPts:
-        slc = slice(startCutPts,endCutPts)
+        slc = slice(startCutPts,-endCutPts)
     else:
         slc = slice(startCutPts,None)
     return t[slc], y[slc]
