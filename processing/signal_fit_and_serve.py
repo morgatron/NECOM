@@ -1,12 +1,20 @@
 """
-Reads the stream of acquired data and fits it. Then outputs it on another ZMQ socket.
+Transforms the stream of acquired traces to signal values: ideally generically.
+Then outputs it on another ZMQ socket.
 
-To know what to fit to, it reads 'signatures' on disk or served by 'sginature_calculator.py'
+To know what to fit to, it reads 'signatures' from somewhere: from disk or served by 'sginature_calculator.py'
+
+inputs:
+* data source
+* pre-processing function (masking out areas etc)
+* actual fitting function (traces, currentSignatures, fitParams)
+* initialSignatures
+* function to update signatures <- should prob. be external code.
 
 """
 
 import numpy as np
-import frame_preprocessing
+#import frame_preprocessing
 
 
 
@@ -15,6 +23,7 @@ class FitServer(object):
     PORT = "5561"
     streamFile=None
 
+    def __init__(self, signalSource, fittingFunc, initialSignatures=None, signatureUpdateFunc=None):
     def __init__(self, varsToFit = ['Bx', 'By', 'Bz'], sampRate=15):
         import pmAcquire as acq
 

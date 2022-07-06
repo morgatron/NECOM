@@ -24,7 +24,7 @@ t = None
 
 pp = Box( 
         sleep = 0.1,
-        func = lambda t, y: {'raw':{'x':t, 'y':y[0]}
+        func = lambda t, y: {'raw':{'x':t, 'y':y[0]}}
         )
 
 def update():
