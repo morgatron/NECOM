@@ -68,18 +68,21 @@ class Channel():
     #        return newfunc
     #    else:
     #        return attr
+dg1000, dg900_A, dg900_B, chs = None, None, None, None
 
+def init():
+    globals dg1000, dg900_A, dg900_B, chs
+    dg1000 = RigolFG1000("USB0::0x1AB1::0x0642::DG1ZA193403439::INSTR")# (DG1022)
+    dg900_A = RigolFG900("USB0::0x1AB1::0x0643::DG9A210800150::INSTR") # (first DG952) By, Bz
+    dg900_B = RigolFG900("USB0::0x1AB1::0x0643::DG9A210800149::INSTR")# (second DG952)
+    chs = Box(
+        pump = Channel(dg1000, chanNum=0),
+        hardBz = Channel(dg1000, chanNum=1),
+        Bx = Channel(dg900_B, chanNum=0),
+        By = Channel(dg900_A, chanNum=0),
+        Bz = Channel(dg900_A, chanNum=1),
+    )
 
-dg1000 = RigolFG1000("USB0::0x1AB1::0x0642::DG1ZA193403439::INSTR")# (DG1022)
-dg900_A = RigolFG900("USB0::0x1AB1::0x0643::DG9A210800150::INSTR") # (first DG952) By, Bz
-dg900_B = RigolFG900("USB0::0x1AB1::0x0643::DG9A210800149::INSTR")# (second DG952)
-chs = Box(
-    pump = Channel(dg1000, chanNum=0),
-    hardBz = Channel(dg1000, chanNum=1),
-    Bx = Channel(dg900_B, chanNum=0),
-    By = Channel(dg900_A, chanNum=0),
-    Bz = Channel(dg900_A, chanNum=1),
-)
 def setPulsePattern(chanName, seqDesc):
     #endCutPts = None
     #if chanName != "pump" and 0:
@@ -299,6 +302,7 @@ if __name__=="__main__":
     from numpy import pi, sin, cos 
     t=np.arange(0,15e-3, 1e-6)
     y=np.sin(2*pi*t*1000)
+    init()
     setPulsePatterns(patternD, totalTime = 4000e-6)
     #pfg=PmFgController()
     #pfg.setRates(1e6,1e6,1e6)

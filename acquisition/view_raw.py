@@ -1,4 +1,4 @@
-import picoscope_acquire as acq
+#import picoscope_acquire as acq
 import numpy as np
 import DPM
 import pyqtgraph as pg
@@ -6,6 +6,24 @@ from time import sleep
 import threading
 from box import Box
 
+import zmq, pickle
+
+glbSOCKET_PUBSUB =None
+glbPORT_PUBSUB = 5560
+def subscribe():
+    global glbSOCKET_PUBSUB
+    #context = zmq.Context()
+    glbSOCKET_PUBSUB = zmq.Context().socket(zmq.SUB)
+    glbSOCKET_PUBSUB.set_hwm(5)
+    glbSOCKET_PUBSUB.connect("tcp://localhost:%s" % glbPORT_PUBSUB)
+    glbSOCKET_PUBSUB.setsockopt(zmq.SUBSCRIBE, b"raw")
+
+def getData():
+    if glbSOCKET_PUBSUB.poll(10):
+        topic, msg = glbSOCKET_PUBSUB.recv().split(b' ', 1)
+        return topic, pickle.loads(msg)
+    else:
+        print(" no");
 dpm = None
 glb_RUN = False
 glb_INITED = False
@@ -14,8 +32,9 @@ def init():
     global glb_INITED
     if dpm is not None:
         close()
-    acq.init(bRemote=True)
-    acq.startStreaming();
+    #acq.init(bRemote=True)
+    #acq.startStreaming();
+    subscribe()
     dpm = DPM.DockPlotManager("scope")
     glb_INITED = True
 
@@ -29,7 +48,8 @@ pp = Box(
 
 def update():
     global data, t
-    reply=acq.checkForPublished()
+    #reply=acq.checkForPublished()
+    reply = getData()
     if reply is None:
         print("Nothing recieved")
         return
@@ -72,7 +92,8 @@ def stop():
 
 def close():
     stop()
-    acq.close()
+    #acq.close()
+    glbSOCKET_PUBSUB.close()
     del dpm
 
 def preProc(t, data):

@@ -6,14 +6,13 @@ import pdb
 from box import Box
 import util
 import numpy as np
-from .. import shared_parameters
+import shared_parameters
 from time import sleep
 import os
 from copy import deepcopy
 from pulse_patterns import generateTriggerWaveforms, makePulseTrain
-from rigol.rigolfg import RigolFG
 from functools import lru_cache
-import fg_addr
+import fgs_mod as fgs
 
 #import fgAgilent
 #from coils import Coils
@@ -26,8 +25,8 @@ import fg_addr
 
 d = Box( #devices
     coils=None,
-    pumpAndBzFG=None,
     oven = None,
+    fgs =None,
     )
 
 glbP=shared_parameters.SharedParams()
@@ -51,8 +50,6 @@ def init_comms():
     d.coils = tldevice("COMX")
     #d.coils.setModFreqs(3,4,5)
     #print("trigTask inited")
-    addr="USB0::0x1AB1::0x0643::DG9A210800150::INSTR" # Replace with the actual address
-    d.pumpAndBzFG= RigolFG(addr)
 
     import tldevice
     d.oven = tldevice("COMX")
@@ -60,6 +57,9 @@ def init_comms():
     #acq.subscribe(b'raw')
     setupExperiment()
     print("Experiment setup")
+
+    fgs.init()
+    d.fgs = fgs
 
 
 @lru_cache(1)
@@ -73,14 +73,12 @@ def setupOven(set_temp, pid_params=None):
 
 @lru_cache(1)
 def setupPumpAndNucPulses(tTotal, tPumpStart, tPumpWidth, tMagStart, tMagWidth):
-    sampRate = 1000000# ??
     #sampRate = pulseFG.sampRate 
     
-    d.pumpAndBzFG.setRate(sampRate)
 
     pump_wvfm = makePulseTrain([tPumpStart, tTotal+tPumpStart],  pulseTimes = 2*[tPumpWidth], pulseHeights=2*[2.0], sampleRate=sampRate, Nsamples = 2*sampRate *(tTotal+5e-6) )
-    d.pumpAndBzFG.uploadWaveform(pump_wvfm, chanNum = 0)
-    d.pumpAndBzFG.setTriggerMode("int", chanNum=0)
+    d.fg_chs.pump.uploadWaveform(pump_wvfm, chanNum = 0)
+    d.fg_chs.pump.setTriggerMode("int", chanNum=0)
 
     Bz_wvfm = makePulseTrain([tMagStart, tTotal+tMagStart],  pulseTimes = 2*[tMagWidth], pulseHeights=[1,-1], sampleRate=sampRate, Nsamples = 2*sampRate *(tTotal+5e-6) )
     d.pumpAndBzFG.uploadWaveform(Bz_wvfm, chanNum = 1)
