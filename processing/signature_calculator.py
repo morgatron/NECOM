@@ -77,42 +77,48 @@ def do_ica(X, fs, n_components=5):
 if __name__ == "__main__":
     import pylab as pl
     import util
+    import shared_parameters
 
-    Nbasis = 4
+    glbP = shared_parameters.SharedParams("NECOM")
 
-    datD = np.load("test_data.npz") 
-    tL = datD['tL']
-    y = datD['y'][:4000]
-    y = util.smoothalong(y,20, axis=0 )
-    y = util.smoothalong(y,20, axis=1 )
-    y -= y.mean(axis=0)[None,:]
-    t = np.arange(y.shape[1])*datD['dt']
-    def normalise(Y):
-        return Y/np.linalg.norm(Y, axis=1)[:,None]
-        #return Y/np.sqrt((Y*Y).sum(axis=1))[:,None]
-    
+    if 1:
+        glbP.dS_dX = 
+    else:
+        Nbasis = 4
 
-    signatures = makeTopHatBasis(t.size, Nbasis)
-    signatures += .1*np.random.normal(size=signatures.shape)
-    signatures = sm.add_constant(signatures.T).T
-    signatures = normalise(signatures)
-    X = y.T.astype('f8')
-    sigL = [signatures]
-    fitpL = []
-    for k in range(20):
-        signatures += 0.00*normalise(np.random.normal(size=signatures.shape))
-        fit = sm.OLS(X, signatures.T).fit()
-        fit_AC = fit.params - 1*fit.params.mean(axis=1)[:,None]
-        fit_AC = fit_AC[:, :-50]
-        new_signatures = (fit_AC[:,None]*X[:,:-50]).mean(axis=-1)
-        signatures = (1*signatures + normalise(new_signatures))/2
-        print (fit.eigenvals)
+        datD = np.load("test_data.npz") 
+        tL = datD['tL']
+        y = datD['y'][:4000]
+        y = util.smoothalong(y,20, axis=0 )
+        y = util.smoothalong(y,20, axis=1 )
+        y -= y.mean(axis=0)[None,:]
+        t = np.arange(y.shape[1])*datD['dt']
+        def normalise(Y):
+            return Y/np.linalg.norm(Y, axis=1)[:,None]
+            #return Y/np.sqrt((Y*Y).sum(axis=1))[:,None]
+        
 
-        sigL.append(signatures)
-        fitpL.append(fit.params)
+        signatures = makeTopHatBasis(t.size, Nbasis)
+        signatures += .1*np.random.normal(size=signatures.shape)
+        signatures = sm.add_constant(signatures.T).T
+        signatures = normalise(signatures)
+        X = y.T.astype('f8')
+        sigL = [signatures]
+        fitpL = []
+        for k in range(20):
+            signatures += 0.00*normalise(np.random.normal(size=signatures.shape))
+            fit = sm.OLS(X, signatures.T).fit()
+            fit_AC = fit.params - 1*fit.params.mean(axis=1)[:,None]
+            fit_AC = fit_AC[:, :-50]
+            new_signatures = (fit_AC[:,None]*X[:,:-50]).mean(axis=-1)
+            signatures = (1*signatures + normalise(new_signatures))/2
+            print (fit.eigenvals)
 
-    fitA = np.array(fitpL)
-    sigA = np.array(sigL)
-    for k in range(Nbasis+1):
-        pl.figure();
-        pl.plot(sigA[::3,k].T)
+            sigL.append(signatures)
+            fitpL.append(fit.params)
+
+        fitA = np.array(fitpL)
+        sigA = np.array(sigL)
+        for k in range(Nbasis+1):
+            pl.figure();
+            pl.plot(sigA[::3,k].T)

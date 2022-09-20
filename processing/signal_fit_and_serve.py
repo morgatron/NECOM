@@ -14,9 +14,10 @@ inputs:
 """
 
 import numpy as np
+import shared_parameters
 #import frame_preprocessing
 
-
+glbP = shared_parameters.SharedParams()
 
 import zmq
 class FitServer(object):

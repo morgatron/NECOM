@@ -71,13 +71,13 @@ class Channel():
 dg1000, dg900_A, dg900_B, chs = None, None, None, None
 
 def init():
-    globals dg1000, dg900_A, dg900_B, chs
+    globals dg1000, dg900_A, dg900_B, chs;
     dg1000 = RigolFG1000("USB0::0x1AB1::0x0642::DG1ZA193403439::INSTR")# (DG1022)
     dg900_A = RigolFG900("USB0::0x1AB1::0x0643::DG9A210800150::INSTR") # (first DG952) By, Bz
     dg900_B = RigolFG900("USB0::0x1AB1::0x0643::DG9A210800149::INSTR")# (second DG952)
     chs = Box(
         pump = Channel(dg1000, chanNum=0),
-        hardBz = Channel(dg1000, chanNum=1),
+        bigBy = Channel(dg1000, chanNum=1),
         Bx = Channel(dg900_B, chanNum=0),
         By = Channel(dg900_A, chanNum=0),
         Bz = Channel(dg900_A, chanNum=1),

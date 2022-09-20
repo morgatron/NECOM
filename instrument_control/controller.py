@@ -4,6 +4,7 @@ Functions to set them all up given experiment parameters, as well as stop() and 
 """
 import pdb
 from box import Box
+from box import Box as B
 import util
 import numpy as np
 import shared_parameters
@@ -13,11 +14,14 @@ from copy import deepcopy
 from pulse_patterns import generateTriggerWaveforms, makePulseTrain
 from functools import lru_cache
 import fgs_mod as fgs
+import teensy_wiggler
 
+glbP = shared_parameters.SharedParams("NECOM")
 #import fgAgilent
 #from coils import Coils
 #from oven import Oven
 
+GLB_sampRate = int(1e6)
 
 
 
@@ -27,22 +31,8 @@ d = Box( #devices
     coils=None,
     oven = None,
     fgs =None,
+    wiggler = teensy_wiggler,
     )
-
-glbP=shared_parameters.SharedParams()
-def retrievePresentOutputs():
-    outputs=Box()
-    outputs.fields=Box(
-                    vx=d.coils.x.field(), 
-                    vy=d.coils.y.field(),
-                    vz=d.coils.z.field(),
-                    )
-    outputs.fg=Box(t=d.fg.t,
-                    vx=d.fgCont.VX, 
-                    vy=d.fgCont.VY,
-                    vz=d.fgCont.VZ,
-                    )
-    return outputs
 
 def init_comms():
     global d
@@ -62,6 +52,25 @@ def init_comms():
     d.fgs = fgs
 
 
+def retrievePresentOutputs():
+    #outputs=Box()
+    #outputs.fields=Box(
+    #                vx=d.coils.x.field(), 
+    #                vy=d.coils.y.field(),
+    #                vz=d.coils.z.field(),
+    #                )
+    #outputs.fg=Box(t=d.fg.t,
+    #                vx=d.fgCont.VX, 
+    #                vy=d.fgCont.VY,
+    #                vz=d.fgCont.VZ,
+    #                )
+    #pass
+
+
+# lru_cache is so that if the function is called identically twice in a row, 
+# it only operates once
+
+# Set precision magnetic fields
 @lru_cache(1)
 def setupDCFields(Bx, By, Bz):
     d.coils.setFields(Bx, By, Bz)
@@ -70,17 +79,75 @@ def setupDCFields(Bx, By, Bz):
 def setupOven(set_temp, pid_params=None):
     d.oven.pid.setpoint(set_temp)
 
+# precision coil current drivers
+@lru_cache(1) 
+def setupPrecisionModulations( Bx, By, Bz ): 
+    """
+    - Each is a tuple: (amp, frequency)
+    """
+    mod_paramsL = [(ax,tup) for ax, tup in zip('xyz', [Bx,By,Bz]) if tup is not None ]
+    for ax, [amp, freq] in mod_paramsL):
+        d.coils[ax].field.modulation.amp(amp)
+        d.coils[ax].field.modulation.freq(freq)
+    
+# Synced to rep rate- i.e. Teensy driven stuff
+@lru_cache(1)
+def setupSyncedModulations(Bx=None, Bz=None, pump_Phi=None, pump_Theta=None, bAllOff=False ): 
+    """
+    - mods is a list of tuples: (ax, amp, period)
+    """
+    modL = []
+    if pump_Phi:
+        modL.append((0, pump_Phi.amp, pump_Phi.period_cycles))
+    if pump_Theta:
+        modL.append((1, pump_Theta.amp, pump_Theta.period_cycles))
+
+    if Bx:
+        modL.append(["DAC0", *Bx])
+    if Bz:
+        modL.append(["DAC1", *Bz])
+    
+
+    for mod_params in modL:
+        d.wiggler.setMod(*mod_params)
+    if bAllOff:
+        d.wiggler.modOff()
+    else:
+        d.wiggler.modOn()
+    
+
+def setupMagPulses(tTotal, BxParams, ByParams, BzParams, period_cycles=2):
+
+@lru_cache(1)
+def setupPumpPulses(tTotal, pulseParams, Nreps = 2):
+
+    t0 = pulseParams.t0
+    wvfm = makePulseTrain( t0 + tTotal*np.arange(Nreps),  
+        widths= Nreps*[width], heights=Nreps*[2.0], sampleRate=GLB_sampRate, Nsamples = 2*sampRate *(tTotal+5e-6) )
+    d.fg_chs.pump.uploadWaveform( wvfm )
+    d.fg_chs.pump.setTriggerMode("int")
+
+
+@lru_cache(1)
+def setupBigByPulses(tTotal, pulseParams, Nreps = 1):
+    t0, amp, width = pulseParams.t0, pulseParams.amp, pulseParams.width
+    
+    wvfm = makePulseTrain( startTs =t0 + tTotal*np.arange(2),  
+        pulseTimes = Nreps*[width, width], heights=[amp, -amp], 
+        sampleRate=GLB_sampRate, tTotal = tTotal*2 )
+    d.fgs.bigBy.uploadWaveform( wvfm )
+    d.fgs.bigBy.setTriggerMode("ext")
+
+def setupByPulses(tTotal, pulseParams, Nreps = 1):
 
 @lru_cache(1)
 def setupPumpAndNucPulses(tTotal, tPumpStart, tPumpWidth, tMagStart, tMagWidth):
-    #sampRate = pulseFG.sampRate 
-    
 
-    pump_wvfm = makePulseTrain([tPumpStart, tTotal+tPumpStart],  pulseTimes = 2*[tPumpWidth], pulseHeights=2*[2.0], sampleRate=sampRate, Nsamples = 2*sampRate *(tTotal+5e-6) )
+    pump_wvfm = makePulseTrain([tPumpStart, tTotal+tPumpStart],  pulseTimes = 2*[tPumpWidth], heights=2*[2.0], sampleRate=sampRate, Nsamples = 2*sampRate *(tTotal+5e-6) )
     d.fg_chs.pump.uploadWaveform(pump_wvfm, chanNum = 0)
     d.fg_chs.pump.setTriggerMode("int", chanNum=0)
 
-    Bz_wvfm = makePulseTrain([tMagStart, tTotal+tMagStart],  pulseTimes = 2*[tMagWidth], pulseHeights=[1,-1], sampleRate=sampRate, Nsamples = 2*sampRate *(tTotal+5e-6) )
+    Bz_wvfm = makePulseTrain([tMagStart, tTotal+tMagStart],  pulseTimes = 2*[tMagWidth], heights=[1,-1], sampleRate=sampRate, Nsamples = 2*sampRate *(tTotal+5e-6) )
     d.pumpAndBzFG.uploadWaveform(Bz_wvfm, chanNum = 1)
     d.pumpAndBzFG.setTriggerMode("int", chanNum=1)
     #Set sync_out on
@@ -129,6 +196,13 @@ def waitForStableTemp():
             break
         sleep(1)
 
+def setupPulsing(tTot, pump= None, bigBy=None, Bx = None, By=None, Bz = None):
+    if pump is not None:
+        setupPumpPulses(tTot, pump)
+    if bigBy is not None:
+        setupBigByPulses(tTot, bigBy)
+    
+    setupMagPulses(Bx, By, Bz)
 
 ## STUFF BELOW HERE DOESN"T BELONG--------------------------------------------
 #lasParamNames=[]#'prbI', 'prbT', 'pumpTime']
@@ -211,29 +285,43 @@ def waitForStableTemp():
 #
 #
 #vSclFact=1.
-#p0= Box(
-#    pulses=Box(
-#        tPumpStart= 10e-6,
-#        tMagStart = 00e-6
-#        tMagWidth = 10e-6
-#        tPumpWidth = 10e-6,
-#        tTot=1700e-6,
-#    ),
-#    fields=Box(
-#        Bx=1.00,
-#        By=-0.0,
-#        Bz=-0.00,
-#    ),
-#    modulations = Box(
-#        Bx = 0.02,
-#        BxFreq = 7,
-#        #...
-#        #
-#        #PTheta = (0.001, 0.1),
-#        #PPhi = (0.001, 0.15)
-#    )
-#    totalTime=1./62, # Period of mains AC
-#)
+p0= B(
+    pulses=B(
+        pump = B( 
+           t0= 10e-6,
+           tWidth = 100e-6,
+           amp = 10.0,
+        ),
+        bigBy = B(
+            t0 = 0e-6,
+            tWidth = 50e-6,
+            amp = 1.0,
+        ),
+        By = B(
+            t0 = 5e-6,
+            tWidth = 5e-6,
+            amp = 2.0,
+        ),
+        tTot=1700e-6,
+    ),
+    biasFields=Box(
+        Bx=1.00,
+        By=-0.0,
+        Bz=-0.00,
+    ),
+    modsSynced = B(
+        Bx = B( amp= 100, period_cycles = 54),
+        By = B( amp= 100, period_cycles = 32),
+        #...
+        pump_Theta = B(amp = 100, period_cycles = 23),
+        pump_Phi = B(amp = 100, period_cycles = 37),
+    ),
+    modsPrec = B(
+        Bx = B(amp= 0.02, freq= 20.872e-3),
+        By = B(amp = 0.02, freq= 15.1e-3),
+        Bz = B(amp = 0.02, freq= 23.1e-3),
+    ),
+)
 
 if __name__=="__main__":
     from importlib import reload

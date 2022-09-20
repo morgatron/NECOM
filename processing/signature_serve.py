@@ -1,3 +1,18 @@
+""" Online signature calculator, plotter, server
+
+Inputs: 
+* scope data
+* Modulation parameters (shared params ok)
+
+* MAY read fitted data too (not clear yet)
+* MAY read other slow modulation params (not clear yet)
+
+Outputs:
+* A signature dictionary
+    * Maybe saved to disk, maybe served via ZMQ?
+* Perhaps a graph of the latest sigs
+
+"""
 import numpy as np
 import DPM
 import pyqtgraph as pg
@@ -31,7 +46,7 @@ def init():
     if dpm is not None:
         close()
     subscribe()
-    dpm = DPM.DockPlotManager("scope")
+    dpm = DPM.DockPlotManager("signatures")
     glb_INITED = True
 
 data = None
@@ -44,7 +59,6 @@ pp = Box(
 
 def update():
     global data, t
-    #reply=acq.checkForPublished()
     reply = getData()
     if reply is None:
         print("Nothing recieved")
@@ -91,15 +105,3 @@ def close():
     #acq.close()
     glbSOCKET_PUBSUB.close()
     del dpm
-
-def preProc(t, data):
-    N = t.size//2
-    dat = data.mean(axis=0)
-    y1, y2 = dat[:N], dat[-N:]
-    t1 = t[:N]
-    return {'m': {'x':t1, 'y':(y1 - y2)}, 'p': {'x':t1, 'y':(y1 + y2)}}
-pp.func= preProc
-def wrap(func):
-    def wrapped(t, data):
-        d = func(t, data)
-        return {'nam'}

@@ -17,7 +17,7 @@ idxMap = {
 def clear(ser):
     _ = ser.read_all()
 
-def write_and_check(cmd, bVerbose=True):
+def write_and_check_err(cmd, bVerbose=True):
     ser = serial.Serial(mcu_addr)
     if hasattr(cmd, "encode"):
         cmd = cmd.encode()
@@ -33,6 +33,7 @@ def write_and_check(cmd, bVerbose=True):
         raise ValueError(f"Err message from mcu: {lines}\n\n CMD: {cmd}")
     if bVerbose:
         print(lines);
+
 def move(ax, steps):
     if hasattr(ax, "lower"):
         ax = ax.lower()
@@ -41,26 +42,27 @@ def move(ax, steps):
     if ax not in "abcd":
         raise ValueError("ax should resolve to one of ABCD")
     msg = f"mv {ax}{steps}"
-    write_and_check(msg)
+    write_and_check_err(msg)
 
 
 def moveMany(movePairs):
     msg = f"mv"
     for ax,steps in movePairs: 
         msg = msg + f" {ax}{steps}"
-    write_and_check(msg)
+    write_and_check_err(msg)
 
 def modOn():
-    write_and_check("modOn")
+    write_and_check_err("modOn")
 def modOff():
-    write_and_check("modOff")
+    write_and_check_err("modOff")
 def setMod(ax, amp, period):
     if hasattr(ax, "lower"):
         ax = ord(ax.lower()) - ord("a")
-    if ax not in [0,1,2,3]:
+    if ax not in [0,1,2,3, "dac0", "dac1"]:
         raise ValueError("ax should resolve to one of 0,1,2,3")
     msg = f"set_mod {ax} {amp} {period}"
-    write_and_check(msg)
+    write_and_check_err(msg)
+
 def close():
     global ser
     ser.close()
