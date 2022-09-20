@@ -19,8 +19,10 @@ import pyqtgraph as pg
 from time import sleep
 import threading
 from box import Box
-
+import shared_parameters
 import zmq, pickle
+
+glbP = shared_parameters.SharedParams("NECOM")
 
 glbSOCKET_PUBSUB =None
 glbPORT_PUBSUB = 5560
@@ -57,6 +59,13 @@ pp = Box(
         func = lambda t, y: {'raw':{'x':t, 'y':y[0]}}
         )
 
+def calc_square_mod_vals(cycle, modParamD):
+    mod_valD = {}
+    for key, [amp,period] in modParamD:
+        mod_valD[key] = amp*(1.0 if cycle%period-period/2 > 0 else -1.0)
+    return mod_valD
+
+
 def update():
     global data, t
     reply = getData()
@@ -66,7 +75,8 @@ def update():
     topic, datD=reply
     dt=datD['dt']
     data=datD['data']
-    if len(data):
+
+    if len(data): # Not sure if this is actually necessary- since this may be done on the sending end already.
         try:
             data=np.vstack(data)
         except ValueError: # if they're not all the same length we'll trim them -- but this may be the sign of a problem
@@ -74,16 +84,21 @@ def update():
             newMaxL=min([r.size for r in data])
             data=[r[:newMaxL] for r in data]
     t=np.arange(data[0].size)*dt
-    pltDict = pp.func(t, data)
-    if 'x' in pltDict:
-        dpm.addData('raw', pltDict)
-    else:
-        for name, dataD in pltDict.items():
-            dpm.addData(name, dataD)
+
+    # Need a mechanism to sync
+    mod_valD = calc_square_mod_vals(cycle, modParamD)
+    sig_calculator.update(data, mod_valD)
+
+    new_sigs = sig_calculator.signatures
+    glbP.p.signatures = new_sigs
+
+    #Plot
+    for name, dataD in pltDict.items():
+        dpm.addData(name, dataD)
     #plot
     #dpm.addData("raw", {'x':tPlt, 'y':yPlt})
 
-def plotContinuously():
+def runContinuously():
     while glb_RUN:
         update()
         print('.')

@@ -1,0 +1,1 @@
+wt -p necom_conda; split-pane -V -p necom_conda; move-focus left; split-pane -H -p analysis_conda; move-focus right; split-pane -H -p acq_serve

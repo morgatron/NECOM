@@ -2,7 +2,7 @@ import numpy as np
 import DPM
 import pyqtgraph as pg
 from time import sleep
-import threading
+from PyQt5.QtWidgets import QApplication
 from box import Box
 
 import zmq, pickle
@@ -20,12 +20,12 @@ def getData():
     if glbSOCKET_PUBSUB.poll(10):
         topic, msg = glbSOCKET_PUBSUB.recv().split(b' ', 1)
         return topic, pickle.loads(msg)
-    else:
-        print(" no");
+
 dpm = None
 glb_RUN = False
 glb_INITED = False
 def init():
+
     global dpm
     global glb_INITED
     if dpm is not None:
@@ -44,10 +44,9 @@ pp = Box(
 
 def update():
     global data, t
-    #reply=acq.checkForPublished()
     reply = getData()
     if reply is None:
-        print("Nothing recieved")
+        print(".", end="")
         return
     topic, datD=reply
     dt=datD['dt']
@@ -77,7 +76,7 @@ def plotContinuously():
 
 glb_RUN_THREAD =None
 timer = None
-def start(interval =0.1):
+def start(interval =0.2):
     global timer
     timer = pg.QtCore.QTimer()
     timer.timeout.connect(update)
@@ -99,7 +98,14 @@ def preProc(t, data):
     t1 = t[:N]
     return {'m': {'x':t1, 'y':(y1 - y2)}, 'p': {'x':t1, 'y':(y1 + y2)}}
 pp.func= preProc
-def wrap(func):
-    def wrapped(t, data):
-        d = func(t, data)
-        return {'nam'}
+#def wrap(func):
+#    def wrapped(t, data):
+#        d = func(t, data)
+#        return {'nam'}
+#    return wrapped
+
+
+if __name__ == "__main__":
+    app = QApplication([])
+    init()
+    start()
