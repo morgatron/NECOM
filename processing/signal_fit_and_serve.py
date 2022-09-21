@@ -17,7 +17,7 @@ import numpy as np
 import shared_parameters
 #import frame_preprocessing
 
-glbP = shared_parameters.SharedParams()
+glbP = shared_parameters.SharedParams("NECOM")
 
 import zmq
 class FitServer(object):

@@ -74,6 +74,7 @@ def do_ica(X, fs, n_components=5):
     return A_, S_, dominant_freqs
 
 
+
 if __name__ == "__main__":
     import pylab as pl
     import util

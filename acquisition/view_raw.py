@@ -97,6 +97,7 @@ def preProc(t, data):
     y1, y2 = dat[:N], dat[-N:]
     t1 = t[:N]
     return {'m': {'x':t1, 'y':(y1 - y2)}, 'p': {'x':t1, 'y':(y1 + y2)}}
+
 pp.func= preProc
 #def wrap(func):
 #    def wrapped(t, data):
