@@ -11,21 +11,27 @@ inputs:
 * initialSignatures
 * function to update signatures <- should prob. be external code.
 
+* If no signatures are given, this should be able to work them out somehow.
+
 """
 
 import numpy as np
 import shared_parameters
 #import frame_preprocessing
-
 glbP = shared_parameters.SharedParams("NECOM")
 
 import zmq
+
+
+
+def fitting_fuunc(traces, signatures, params):
+    signals = linear_fit(traces, signatures, addDC=True)
 class FitServer(object):
     PORT = "5561"
     streamFile=None
 
     def __init__(self, signalSource, fittingFunc, initialSignatures=None, signatureUpdateFunc=None):
-    def __init__(self, varsToFit = ['Bx', 'By', 'Bz'], sampRate=15):
+    def __init__(self, varsToFit = ['Bx', 'By'], sampRate=15):
         import pmAcquire as acq
 
         acq.init(bRemote=True)
@@ -62,6 +68,12 @@ class FitServer(object):
             self.gwGrad.updateFromDict(self.gradProcessedD)
 
     def update(self):
+        # self.signatures = updateSignatures()
+        # traces = self.signalSource.retrieveData()
+        # signals = self.fitFunc(traces)
+        # publish(signals)
+        # if self.bSaveToFile:
+        #   saveToFile(signals)
         self.updateGradProc() #if necessary
         #datL=acq.checkForPublished()
         #topic,(t0L,rawL,dt)=acq.checkForPublished()

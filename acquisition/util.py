@@ -295,6 +295,9 @@ def sliceSorted(t, t_0, t_end=None, delta_t=None):
 
         return indxL
 
+def square_wave(t, frequency, duty_cycle=0.50):
+    return (t%(1./frequency)<duty_cycle*1./frequency)
+
 class DummyObj(object):
     class_name =""
     bInited = False

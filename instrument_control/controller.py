@@ -313,8 +313,8 @@ p0= B(
         Bx = B( amp= 100, period_cycles = 54),
         By = B( amp= 100, period_cycles = 32),
         #...
-        pump_Theta = B(amp = 100, period_cycles = 23),
-        pump_Phi = B(amp = 100, period_cycles = 37),
+        pump_Theta = B(amp = 100, period_cycles = 24),
+        pump_Phi = B(amp = 100, period_cycles = 38),
     ),
     modsPrec = B(
         Bx = B(amp= 0.02, freq= 20.872e-3),
