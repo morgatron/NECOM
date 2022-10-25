@@ -4,11 +4,12 @@ Usage:
     sigs = [sigG.__next__() for k in range(500)]
 
 """
+from numpy import random, arange, array, linspace, cos, sin, exp, pi
 import numpy as np
-from numpy import *
 from box import Box
 import util
 import shared_parameters
+from async_components import ZMQChunkedPublisher
 
 glbP = shared_parameters.SharedParams("NECOM")
 
@@ -29,7 +30,7 @@ DT = 0.02 #  hopeully can keep up!!]
 basis = np.array([Bx, By, pump_Theta, pump_Phi])
 
 def make_generator(f_of_t, sclNoise, smthT, dt = DT):
-    s = np.random.normal()
+    s = random.normal()
     t = 0
     Nsm = smthT/dt
     def gen():
@@ -38,7 +39,7 @@ def make_generator(f_of_t, sclNoise, smthT, dt = DT):
             y = s + f_of_t(t)
             yield y
             t += dt
-            s = (Nsm*s + sclNoise*np.random.normal())/(Nsm+1)
+            s = (Nsm*s + sclNoise*random.normal())/(Nsm+1)
     return gen()
 
 from scipy.interpolate import interp1d
@@ -77,25 +78,18 @@ def total_sig_G(mod_pars, noise =0.1):
 # PUBLISHING
 #-----------------
 
-glbSOCKET_PUBSUB = None
 glbPORT_PUBSUB = 5560
 import zmq, pickle, time
 
 def publishRaw(data, t=None, Nds=1):
     #print(f"pub args: {len(data)}, {data[0].shape}, {len(t)}")
-    msg=b'raw '+ pickle.dumps(dict(data=data, dt=1e-6, t=t))
+    msg=b'raw '+ pickle.dumps(dict(data_L=data, dt=1e-6, t_L=t))
     glbSOCKET_PUBSUB.send(msg)
     #print(f"pub: {len(data)}")
 
-from numpy import random, arange, array
-from numpy.random import normal
 
-def beginPublishing():
-    global glbSOCKET_PUBSUB
-    context = zmq.Context()
-    glbSOCKET_PUBSUB = context.socket(zmq.PUB)
-    glbSOCKET_PUBSUB.set_hwm(5)
-    glbSOCKET_PUBSUB.bind("tcp://*:%s" % glbPORT_PUBSUB) 
+def main():
+    sender = ZMQChunkedPublisher(port = glbPORT_PUBSUB, topic = "raw")
 
     sigG = total_sig_G(glbP.P.modsSynced.copy())
     tLast = time.time()
@@ -106,7 +100,7 @@ def beginPublishing():
             sigG = total_sig_G(glbP.P.modsSynced.copy())
         print("...")
         # wait a random amount
-        slpTime = 0.1 + normal()*0.15
+        slpTime = 0.1 + random.normal()*0.15
         if slpTime <0.03:
             slpTime =0.03
         #print(f"sleep time: {slpTime}")
@@ -116,15 +110,23 @@ def beginPublishing():
         tElapsed = tNow - tLast
         # load an appropriate number of samples in a buffer
         Nsamps = int(tElapsed/DT)
-        #print(f"Nsamps: {Nsamps}")
-        # publish the buffer
-        #print("get samps")
         sigs = [sigG.__next__() for k in range(Nsamps)]
-        publishRaw(sigs, t = tLast + arange(Nsamps)*DT)
+        sender.send(tL = tLast + arange(Nsamps)*DT, datL =  sigs)
+        #publishRaw(sigs, t = tLast + arange(Nsamps)*DT)
         tLast += Nsamps*DT
 
+
+
+#def beginPublishing():
+#    global glbSOCKET_PUBSUB
+#    context = zmq.Context()
+#    glbSOCKET_PUBSUB = context.socket(zmq.PUB)
+#    glbSOCKET_PUBSUB.set_hwm(5)
+#    glbSOCKET_PUBSUB.bind("tcp://*:%s" % glbPORT_PUBSUB) 
+#
 if __name__ == "__main__":
-    beginPublishing()
+    main()
+    #beginPublishing()
     if 0:
         from pylab import *
         ion()

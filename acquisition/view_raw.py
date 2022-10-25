@@ -4,6 +4,7 @@ import pyqtgraph as pg
 from time import sleep
 from PyQt5.QtWidgets import QApplication
 from box import Box
+from async_components import ZMQSubReadChunked, ChunkedSourcePlotter
 
 import zmq, pickle
 
@@ -25,7 +26,6 @@ dpm = None
 glb_RUN = False
 glb_INITED = False
 def init():
-
     global dpm
     global glb_INITED
     if dpm is not None:
@@ -91,14 +91,45 @@ def close():
     glbSOCKET_PUBSUB.close()
     del dpm
 
-def preProc(t, data):
+def split_into_minus_plus(t, y):
     N = t.size//2
-    dat = data.mean(axis=0)
-    y1, y2 = dat[:N], dat[-N:]
+    y1, y2 = y[:N], y[-N:]
     t1 = t[:N]
     return {'m': {'x':t1, 'y':(y1 - y2)}, 'p': {'x':t1, 'y':(y1 + y2)}}
 
-pp.func= preProc
+
+def processStream(data, metaData = {}, Nread = None):
+    print(f"{data.keys}")
+    tL = data['tL']
+    y = data['datL']
+    mnY = np.mean(y, axis=0)
+    N = mnY.size
+    t = np.arange(N)
+    if 'dt' in metaData:
+         t *= metaData['dt']
+
+    data = {'raw': {'x': t, 'y': mnY}}
+    data |= split_into_minus_plus(t, mnY)
+    return data# {'data':data, "metaData":metaData, 'Nread': N}
+
+
+
+
+IN_PORT = 5560
+def main():
+    reader = ZMQSubReadChunked(port = IN_PORT, topic = "raw")
+    plotter = ChunkedSourcePlotter(
+            inputF = lambda : reader.retrieve(10),
+            preProcessF = lambda d: processStream(d['data'], d['metaData']) if d else None,
+            label = 'raw',
+            defaultPlotKwargs = dict(mode=0), # Replace mode
+            poll_interval=0.2
+            )
+    return plotter
+
+
+
+#pp.func= preProc
 #def wrap(func):
 #    def wrapped(t, data):
 #        d = func(t, data)
@@ -106,7 +137,14 @@ pp.func= preProc
 #    return wrapped
 
 
+import time
 if __name__ == "__main__":
-    app = QApplication([])
-    init()
-    start()
+    app = pg.mkQApp("Plotting Example")
+    #pg.exec(u)
+    #app = QApplication([])
+    plotter = main()
+    def stop():
+        plotter.stop()
+    plotter.start()
+    #init()
+    #start()

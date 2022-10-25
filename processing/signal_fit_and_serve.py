@@ -21,28 +21,46 @@ import shared_parameters
 glbP = shared_parameters.SharedParams("NECOM")
 
 import zmq
+from statsmodels import api as sm
 
 
+def fitting_fuunc(traces, signatures, params, bReturnObjs = False):
 
-def fitting_fuunc(traces, signatures, params):
-    signals = linear_fit(traces, signatures, addDC=True)
+    resF=(lambda mod: mod.fit()) if bReturnObjs else (lambda mod: mod.fit().params)
+    exog = np.array(list(signatures.values())).T
+    exog = sm.add_constant(exog)
+    model=sm.OLS(traces[0], exog)#, missing='drop')
+    resL=[resF(model)]    
+    if len(signal)>1:
+        for trace in traces[1:]:
+            model.endog[:]=trace #sig.stack()
+            resL.append(resF(model))
+    return resL
+
+
+class ZMQPublisher:
+    def __init__(self, port)
+        self.SOCKET= zmq.Context().socket(zmq.PUB)
+        self.SOCKET.set_hwm(10)
+        self.SOCKET.bind("tcp://*:%s" % port)
+    def sendTraces(self, traces):
+        pass
+
+    def close(self):
+        pass
+
 class FitServer(object):
     PORT = "5561"
     streamFile=None
 
-    def __init__(self, signalSource, fittingFunc, initialSignatures=None, signatureUpdateFunc=None):
-    def __init__(self, varsToFit = ['Bx', 'By'], sampRate=15):
-        import pmAcquire as acq
+    def __init__(self, signalSource, fittingFunc, outputFunc, initialSignatures=None, signatureUpdateFunc=None):
+    #def __init__(self, varsToFit = ['Bx', 'By'], sampRate=15):
 
-        acq.init(bRemote=True)
-        acq.subscribe(b'raw')                
-        self.varsToFit = varsToFit
+
+        signalSource.init()
 
         #acq.subscribe(b'seg')
         self.updateGradProc(True)
-        self.SOCKET= zmq.Context().socket(zmq.PUB)
-        self.SOCKET.set_hwm(10)
-        self.SOCKET.bind("tcp://*:%s" % self.PORT)
 
 
         self.sampRate=sampRate
@@ -74,26 +92,15 @@ class FitServer(object):
         # publish(signals)
         # if self.bSaveToFile:
         #   saveToFile(signals)
-        self.updateGradProc() #if necessary
         #datL=acq.checkForPublished()
         #topic,(t0L,rawL,dt)=acq.checkForPublished()
-        rep=acq.checkForPublished()
-        if rep is None:
-            #print("Nothing recieved")
-            return
-        topic,datD=rep
-        dt=datD['dt']
-        rawL=datD['data']
 
-        if len(rawL):
-            try:
-                rawL=np.vstack(rawL)
-            except ValueError: # if they're not all the same length we'll trim them -- but this may be the sign of a problem
-                newMaxL=min([r.size for r in rawL])
-                rawL=[r[:newMaxL] for r in rawL]
-            t=np.arange(rawL[0].size)*dt
+        tL, newTraces = self.signalSource.getWaiting()
+        fit_signals = self.fittingFunc(newTraces, self.signatures)
+        self.outputFunc(tL, fit_signals)
 
-            sigPre = preProcessSig(t, rawL, self.p, subRef=self.gradD['ref'])
+
+            #sigPre = preProcessSig(t, rawL, self.p, subRef=self.gradD['ref'])
             signal = fitSimp(sigPre, self.gradProcessedD, addDC=True)
 
             self.signal = np.array(signal)
@@ -111,6 +118,8 @@ class FitServer(object):
             self.tLast=datD['t'][-1]
 
 
+        self.signatures = self.signatureUpdate(newTraces) #if necessary
+
         if self.streamFile is not None:
             self.signal.to_numpy().tofile(self.streamFile)
         #else:
@@ -118,6 +127,7 @@ class FitServer(object):
         Nnew=self.signal.shape[0]
         self.signalHist=np.roll(self.signalHist, -Nnew, axis=0)
         self.signalHist[-Nnew:]=self.mag[:,:3]
+
         if self.signalHist[0].mean()!=0:
             #pdb.set_trace()
             self.updateCals()

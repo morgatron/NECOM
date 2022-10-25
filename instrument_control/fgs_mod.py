@@ -10,6 +10,7 @@ from . import util
 import inspect
 import pdb
 
+B_PLOT = True
 SAMPLE_RATE = 1e6
 GLB_pulsePatternDefaults = { 'sampleRate': SAMPLE_RATE, "smthFact":4}
 #fgD = {name: None for name in addrD}
@@ -69,12 +70,19 @@ class Channel():
     #    else:
     #        return attr
 dg1000, dg900_A, dg900_B, chs = None, None, None, None
+dpm = None
+def init(bMockHardware = False):
+    globals dg1000, dg900_A, dg900_B, chs, dpm;
+    if bMockHardware:
+        from unittest.mock import Mock
+        dg1000 = Mock(name = "dg1000")
+        dg900_A = Mock(name = "dg900_A")
+        dg900_B = Mock(name = "dg900_B")
 
-def init():
-    globals dg1000, dg900_A, dg900_B, chs;
-    dg1000 = RigolFG1000("USB0::0x1AB1::0x0642::DG1ZA193403439::INSTR")# (DG1022)
-    dg900_A = RigolFG900("USB0::0x1AB1::0x0643::DG9A210800150::INSTR") # (first DG952) By, Bz
-    dg900_B = RigolFG900("USB0::0x1AB1::0x0643::DG9A210800149::INSTR")# (second DG952)
+    else:
+        dg1000 = RigolFG1000("USB0::0x1AB1::0x0642::DG1ZA193403439::INSTR")# (DG1022)
+        dg900_A = RigolFG900("USB0::0x1AB1::0x0643::DG9A210800150::INSTR") # (first DG952) By, Bz
+        dg900_B = RigolFG900("USB0::0x1AB1::0x0643::DG9A210800149::INSTR")# (second DG952)
     chs = Box(
         pump = Channel(dg1000, chanNum=0),
         bigBy = Channel(dg1000, chanNum=1),
@@ -82,6 +90,13 @@ def init():
         By = Channel(dg900_A, chanNum=0),
         Bz = Channel(dg900_A, chanNum=1),
     )
+
+        #sendTimer = RepeatTimer(0.1, lambda: sender.send(**generate_dict_data()) )
+        #sendTimer.start()
+
+    if B_PLOT:
+        import DockPlotManager from DPM.DPM
+        dpm = DockPlotManager("fg_settings")
 
 def setPulsePattern(chanName, seqDesc):
     #endCutPts = None
@@ -91,6 +106,9 @@ def setPulsePattern(chanName, seqDesc):
     params.update(seqDesc)
     t, y = makePulseTrain(**params)
     chs[chanName].setOutputWaveform(t, y)
+
+    if B_PLOT:
+        dpm.addData(chanName, {"x":t, "y": y})
 
 def setPulsePatterns(patternD, othersOff=True, **kwargs):
     """
@@ -107,9 +125,11 @@ def setPulsePatterns(patternD, othersOff=True, **kwargs):
     """
     all_chan_names = chs.keys()
     used_chan_names = patternD.keys()
-    unused_chan_names = set(all_chan_names).difference(used_chan_names)
     for chan_name, pulse_desc in patternD.items():
         setPulsePattern(chan_name, pulse_desc | kwargs)
+
+    # Turn off all unused channels
+    unused_chan_names = set(all_chan_names).difference(used_chan_names)
     for chan_name in unused_chan_names:
         chs[chan_name].setOutputState(0)
 
