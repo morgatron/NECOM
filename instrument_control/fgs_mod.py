@@ -1,12 +1,19 @@
 
 
+from tkinter import W
 from instrument_control.pulse_patterns import makePulseTrain
 #from . import FG
 from box import Box
-from .rigol.rigolfg_1000 import RigolFG1000
-from .rigol.rigolfg_900 import RigolFG900
+try:
+    from .rigol.rigolfg_1000 import RigolFG1000
+    from .rigol.rigolfg_900 import RigolFG900
+    from . import util
+except ImportError:
+    from rigol.rigolfg_1000 import RigolFG1000
+    from rigol.rigolfg_900 import RigolFG900
+    import util
+
 import numpy as np
-from . import util
 import inspect
 import pdb
 
@@ -71,8 +78,15 @@ class Channel():
     #        return attr
 dg1000, dg900_A, dg900_B, chs = None, None, None, None
 dpm = None
+
+def setupTriggers():
+    for ch in chs.values():
+        ch.setTriggerMode("ext")
+        ch.setBurstMode("TRIG")
+    chs.pump.setBurstMode("TRIG")
+    chs.pump.setTriggerMode("int")
 def init(bMockHardware = False):
-    globals dg1000, dg900_A, dg900_B, chs, dpm
+    global dg1000, dg900_A, dg900_B, chs, dpm
     if bMockHardware:
         from unittest.mock import Mock
         dg1000 = Mock(name = "dg1000")
@@ -90,6 +104,8 @@ def init(bMockHardware = False):
         By = Channel(dg900_A, chanNum=0),
         Bz = Channel(dg900_A, chanNum=1),
     )
+    setupTriggers()
+
 
         #sendTimer = RepeatTimer(0.1, lambda: sender.send(**generate_dict_data()) )
         #sendTimer.start()
@@ -102,15 +118,20 @@ def setPulsePattern(chanName, seqDesc):
     #endCutPts = None
     #if chanName != "pump" and 0:
     #    endCutPts = 2
+
     params = GLB_pulsePatternDefaults.copy()
     params.update(seqDesc)
+    #if chanName == "pump":
+        #params['tTotal']+=1e-6
     t, y = makePulseTrain(**params)
+    y[:5]= 1;
+    
     chs[chanName].setOutputWaveform(t, y)
 
     if B_PLOT:
         dpm.addData(chanName, {"x":t, "y": y})
 
-def setPulsePatterns(patternD, othersOff=True, **kwargs):
+def setPulsePatterns(patternD, tTotal, othersOff=True, **kwargs):
     """
     
     patternD is a dict of channel name strings and pulse-patterns. 
@@ -126,12 +147,14 @@ def setPulsePatterns(patternD, othersOff=True, **kwargs):
     all_chan_names = chs.keys()
     used_chan_names = patternD.keys()
     for chan_name, pulse_desc in patternD.items():
-        setPulsePattern(chan_name, pulse_desc | kwargs)
+        setPulsePattern(chan_name, pulse_desc | kwargs | {"tTotal":tTotal})
 
     # Turn off all unused channels
     unused_chan_names = set(all_chan_names).difference(used_chan_names)
     for chan_name in unused_chan_names:
         chs[chan_name].setOutputState(0)
+    chs.pump.setBurstPeriod(tTotal + 7e-6)
+    setupTriggers()
 
 def allOff():
     for chan in chs.keys():
@@ -309,21 +332,24 @@ def allOff():
 #        raise NotImplementedError
 #
 
-samplePatterns = Box({'pump': {'startTimes': [20e-6, 2021e-6], 
-                        'pulseWidths':300e-6,
-                        'pulseHeights': [10,10],
+samplePatterns = Box({'pump': {'startTs': [20e-6, 2021e-6], 
+                        'widths':300e-6,
+                        'heights': [10,10],
                         },
-            "hardBz" :{"startTimes": [0, 2000e-6],
-                        "pulseWidths": 200e-6,
-                        "pulseHeights": [1, -1]},
+            "bigBy" :{"startTs": [0, 2000e-6],
+                        "widths": 200e-6,
+                        "heights": [1, -1]},
+            "Bx" :{"startTs": [500e-6, 2500e-6],
+                        "widths": 100e-6,
+                        "heights": [1, 1]},
             })
 
 if __name__=="__main__":
     from numpy import pi, sin, cos 
     t=np.arange(0,15e-3, 1e-6)
     y=np.sin(2*pi*t*1000)
-    init()
-    setPulsePatterns(patternD, totalTime = 4000e-6)
+    init(False)
+    setPulsePatterns(samplePatterns, tTotal = 4000e-6)
     #pfg=PmFgController()
     #pfg.setRates(1e6,1e6,1e6)
     #pfg.setWaveForms(y,y,y)

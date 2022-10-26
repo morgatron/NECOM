@@ -8,7 +8,11 @@ from numpy import pi
 import numpy as np
 import pdb
 
-from .FG import FG
+#from .FG import FG
+try:
+    from . import FG
+except ImportError:
+    import FG
 
 def array_to_binary_block(data):
     data=np.array(data)
@@ -21,7 +25,7 @@ def array_to_binary_block(data):
     Nstr=str(N)
     return ( "#{0}{1}".format(len(Nstr), Nstr),  dataBytes )
 
-class RigolFG900(FG):
+class RigolFG900(FG.FG):
     #addr="USB0::0x1AB1::0x0588::DG1D124004333::INSTR"
     #addr="USB0::0x1AB1::0x0643::DG9A210800150::INSTR"
     numChans=2 
@@ -120,6 +124,7 @@ class RigolFG900(FG):
     def setBurstOn(self, bOn=True, chanNum=0):
         onOff = "ON" if bOn else "OFF"
         self.handle.write(f":SOUR{chanNum+1}:BURS {onOff}")
+        self.handle.write(f":SOUR{chanNum+1}:BURS:IDLE FPT")
     def trigger(self, chanNum=0):
         return self.handle.write(f":TRIG{chanNum+1}:IMM")
 
