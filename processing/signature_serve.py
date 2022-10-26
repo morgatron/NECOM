@@ -370,8 +370,6 @@ def main():
     reader = ZMQSubReadData(port = IN_PORT+1, topic = "signatures")
     def getData():
         new_dat = reader.retrieve()
-        if new_dat is not None:
-            print(f"got: {new_dat}")
         return new_dat
     plotter = SimpleSourcePlotter(
             inputF = getData,

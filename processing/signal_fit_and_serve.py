@@ -18,43 +18,21 @@ inputs:
 import numpy as np
 import shared_parameters
 #import frame_preprocessing
-glbP = shared_parameters.SharedParams("NECOM")
 
 import zmq
 from statsmodels import api as sm
+from box import Box
+import time
+from async_components import ZMQSubReadChunked, ChunkedSourcePlotter, ZMQChunkedPublisher, AsyncTransformer
 
-
-def fitting_fuunc(traces, signatures, params, bReturnObjs = False):
-
-    resF=(lambda mod: mod.fit()) if bReturnObjs else (lambda mod: mod.fit().params)
-    exog = np.array(list(signatures.values())).T
-    exog = sm.add_constant(exog)
-    model=sm.OLS(traces[0], exog)#, missing='drop')
-    resL=[resF(model)]    
-    if len(signal)>1:
-        for trace in traces[1:]:
-            model.endog[:]=trace #sig.stack()
-            resL.append(resF(model))
-    return resL
-
-
-class ZMQPublisher:
-    def __init__(self, port)
-        self.SOCKET= zmq.Context().socket(zmq.PUB)
-        self.SOCKET.set_hwm(10)
-        self.SOCKET.bind("tcp://*:%s" % port)
-    def sendTraces(self, traces):
-        pass
-
-    def close(self):
-        pass
+glbP = shared_parameters.SharedParams("NECOM")
 
 class FitServer(object):
     PORT = "5561"
     streamFile=None
 
     def __init__(self, signalSource, fittingFunc, outputFunc, initialSignatures=None, signatureUpdateFunc=None):
-    #def __init__(self, varsToFit = ['Bx', 'By'], sampRate=15):
+        
 
 
         signalSource.init()
@@ -99,7 +77,7 @@ class FitServer(object):
         fit_signals = self.fittingFunc(newTraces, self.signatures)
         self.outputFunc(tL, fit_signals)
 
-
+        def update():
             #sigPre = preProcessSig(t, rawL, self.p, subRef=self.gradD['ref'])
             signal = fitSimp(sigPre, self.gradProcessedD, addDC=True)
 
@@ -156,3 +134,87 @@ class FitServer(object):
         self.streamFile=None
 
 
+
+
+#_---------------------------------------------------
+# Redo:
+def fitting_func(traces, signatures, bReturnObjs = False):
+
+    resF=(lambda mod: mod.fit()) if bReturnObjs else (lambda mod: mod.fit().params)
+
+    exog = np.array(list(signatures.values())).T
+    exog = sm.add_constant(exog)
+    model=sm.OLS(traces[0], exog)#, missing='drop')
+    resL=[resF(model)]    
+
+    if len(traces)>1:
+        for trace in traces[1:]:
+            model.endog[:]=trace #sig.stack()
+            resL.append(resF(model))
+
+    resA = np.array(resL)
+    resD = {label: vals for label, vals in zip(['dc']+list(signatures.keys()), resA.T)}
+    return resD
+
+def transformF(new_data, state):
+    signatures = {name:state.signatures[name] for name in state.to_fit }
+    data = new_data['data']
+    t = data['tL']
+    yL= data['datL']
+    resD = fitting_func(yL, signatures)
+    resD['tL'] = t
+    return resD
+    
+def update_state(new_data, state):
+    if glbP.changedSinceLoad() or state.signatures is None:
+        state.signatures = glbP.loadArray('signatures')
+    Nsamps = len(new_data['data']['tL'])
+    state.N_sent += Nsamps
+    print(f"Sample rate: {state.N_sent/(time.time() - state.t_start)}")
+    return state
+
+
+IN_PORT = 5560
+OUT_PORT = 5562
+def main():
+    state0 = Box(
+        signatures = None,
+        N_sent = 0,
+        t_start = time.time(),
+        to_fit = ['Bx', 'By', 'pump_Theta']
+    )
+    reader = ZMQSubReadChunked(port = IN_PORT, topic = "raw")
+    sender = ZMQChunkedPublisher(port = OUT_PORT, topic = "fitted")
+    transformer = AsyncTransformer(
+            inputF = reader.retrieve,
+            transformF = transformF,
+            state_updateF = update_state,
+            outputF = lambda args: sender.send(**args),
+            run_interval = 0.2,
+            state = state0,
+            )
+    # Plotter
+    reader = ZMQSubReadChunked(port = OUT_PORT, topic = "fitted")
+    def getData():
+        new_dat = reader.retrieve()
+        if new_dat:
+            print(new_dat['data'].keys())
+        return new_dat
+    plotter = ChunkedSourcePlotter(
+            inputF = getData,
+            label = 'fitted',
+            poll_interval= 0.1,
+            )
+    transformer.start()
+    plotter.start()
+    return plotter, transformer
+
+
+if __name__ == "__main__":
+    from PyQt5.QtWidgets import QApplication
+    app = QApplication([])
+    #start()
+    plotter, transformer = main()
+    def stop():
+        transformer.stop()
+        plotter.stop()

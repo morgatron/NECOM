@@ -61,8 +61,8 @@ def update_sig_gens(mod_pars):
     #sig_gens.By = make_generator(lambda t: sin(2*pi*t), .1, smthT=0.1),
     sig_gens.Bx = make_generator(get_smth_square(mod_pars.Bx.period_cycles*DT, amp = mod_pars.Bx.amp), .1, smthT=0.05)
     sig_gens.By = make_generator(get_smth_square(mod_pars.By.period_cycles*DT, amp = mod_pars.By.amp), .1, smthT=0.05)
-    sig_gens.pump_Theta = make_generator(get_smth_square(mod_pars.pump_Theta.period_cycles*DT, amp = mod_pars.pump_Theta.amp), .1, smthT=0.2)
-    sig_gens.pump_Phi = make_generator(get_smth_square(mod_pars.pump_Phi.period_cycles*DT, amp = mod_pars.pump_Phi.amp), .1, smthT=0.2)
+    sig_gens.pump_Theta = make_generator(get_smth_square(mod_pars.pump_Theta.period_cycles*DT, amp = mod_pars.pump_Theta.amp), .1, smthT=0.1)
+    sig_gens.pump_Phi = make_generator(get_smth_square(mod_pars.pump_Phi.period_cycles*DT, amp = mod_pars.pump_Phi.amp), .1, smthT=0.1)
     return sig_gens
             
 def total_sig_G(mod_pars, noise =0.1):

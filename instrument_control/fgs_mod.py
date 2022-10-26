@@ -72,7 +72,7 @@ class Channel():
 dg1000, dg900_A, dg900_B, chs = None, None, None, None
 dpm = None
 def init(bMockHardware = False):
-    globals dg1000, dg900_A, dg900_B, chs, dpm;
+    globals dg1000, dg900_A, dg900_B, chs, dpm
     if bMockHardware:
         from unittest.mock import Mock
         dg1000 = Mock(name = "dg1000")
@@ -95,7 +95,7 @@ def init(bMockHardware = False):
         #sendTimer.start()
 
     if B_PLOT:
-        import DockPlotManager from DPM.DPM
+        from DPM import DockPlotManager 
         dpm = DockPlotManager("fg_settings")
 
 def setPulsePattern(chanName, seqDesc):

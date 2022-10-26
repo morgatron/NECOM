@@ -52,7 +52,7 @@ def init_comms():
     d.fgs = fgs
 
 
-def retrievePresentOutputs():
+#def retrievePresentOutputs():
     #outputs=Box()
     #outputs.fields=Box(
     #                vx=d.coils.x.field(), 
@@ -71,6 +71,7 @@ def retrievePresentOutputs():
 # it only operates once
 
 # Set precision magnetic fields
+
 @lru_cache(1)
 def setupDCFields(Bx, By, Bz):
     d.coils.setFields(Bx, By, Bz)
@@ -86,7 +87,7 @@ def setupPrecisionModulations( Bx, By, Bz ):
     - Each is a tuple: (amp, frequency)
     """
     mod_paramsL = [(ax,tup) for ax, tup in zip('xyz', [Bx,By,Bz]) if tup is not None ]
-    for ax, [amp, freq] in mod_paramsL):
+    for ax, [amp, freq] in mod_paramsL:
         d.coils[ax].field.modulation.amp(amp)
         d.coils[ax].field.modulation.freq(freq)
     
@@ -117,13 +118,14 @@ def setupSyncedModulations(Bx=None, Bz=None, pump_Phi=None, pump_Theta=None, bAl
     
 
 def setupMagPulses(tTotal, BxParams, ByParams, BzParams, period_cycles=2):
+    pass
 
 @lru_cache(1)
 def setupPumpPulses(tTotal, pulseParams, Nreps = 2):
 
     t0 = pulseParams.t0
     wvfm = makePulseTrain( t0 + tTotal*np.arange(Nreps),  
-        widths= Nreps*[width], heights=Nreps*[2.0], sampleRate=GLB_sampRate, Nsamples = 2*sampRate *(tTotal+5e-6) )
+        widths= Nreps*[width], heights=Nreps*[2.0], sampleRate=GLB_sampRate, Nsamples = 2*GLB_sampRate *(tTotal+5e-6) )
     d.fg_chs.pump.uploadWaveform( wvfm )
     d.fg_chs.pump.setTriggerMode("int")
 
@@ -160,6 +162,9 @@ def setupExperiment():
 def _setupExperiment(params):
     params=deepcopy(params)
     setupOven(**params.oven)
+    fgs_mod.setPulsePattern("pump", params.pulses.pump)
+    fgs_mod.setPulsePattern("bigBy", params.pulses.bigBy)
+    fgs_mod.
     setupPumpAndNucPulses(**params.pump, **params.Bz_pulse)
     setupDCFields(**params.dc_fields)
 
