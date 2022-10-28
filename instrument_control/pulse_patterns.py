@@ -3,7 +3,10 @@
 
 """
 #from tkinter import W
-from . import util
+try:
+    from . import util
+except ImportError:
+    import util
 import numpy as np
 import pdb
 

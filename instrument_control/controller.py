@@ -5,7 +5,6 @@ Functions to set them all up given experiment parameters, as well as stop() and 
 import pdb
 from box import Box
 from box import Box as B
-import util
 import numpy as np
 import shared_parameters
 from time import sleep
@@ -15,6 +14,7 @@ from pulse_patterns import generateTriggerWaveforms, makePulseTrain
 from functools import lru_cache
 import fgs_mod as fgs
 import teensy_wiggler
+import tldevice
 
 glbP = shared_parameters.SharedParams("NECOM")
 #import fgAgilent
@@ -37,12 +37,10 @@ d = Box( #devices
 def init_comms():
     global d
     print("set up DC fields")
-    d.coils = tldevice("COMX")
     #d.coils.setModFreqs(3,4,5)
     #print("trigTask inited")
-
-    import tldevice
-    d.oven = tldevice("COMX")
+    d.oven = tldevice.Device("COM4")
+    d.coils = tldevice.Device("COM6")
     #acq.init(bRemote=True)
     #acq.subscribe(b'raw')
 
@@ -75,8 +73,8 @@ def setupDCFields(Bx, By, Bz):
     d.coils.setFields(Bx, By, Bz)
 
 @lru_cache(1)
-def setupOven(set_temp, pid_params=None):
-    d.oven.pid.setpoint(set_temp)
+def setupOven(setpoint, pid_params=None):
+    d.oven.therm.pid.setpoint(set_temp)
 
 # precision coil current drivers
 @lru_cache(1) 
@@ -121,13 +119,13 @@ def setupFGs(patterns, tTotal):
 
 
 def setupExperiment():
-    _setupExperiment(glbP.p)
+    _setupExperiment(glbP.P)
 
 def _setupExperiment(params):
     params=deepcopy(params)
     setupOven(**params.oven)
     setupDCFields(**params.biasFields)
-    setupFGS(params.pulses)
+    setupFGs(params.pulses)
     #acq.setScopeParams(acqTime=params.totalTime)
     sleep(0.2)
 
@@ -271,15 +269,15 @@ p0= B(
     ),
     biasFields=Box(
         Bx=1.00,
-        By=-0.0,
+        By=-1.0,
         Bz=-0.00,
     ),
     modsSynced = B(
-        Bx = B( amp= 100, period_cycles = 54),
-        By = B( amp= 100, period_cycles = 32),
+        Bx = B( amp= 1000, period_cycles = 54),
+        By = B( amp= 1000, period_cycles = 37),
         #...
-        pump_Theta = B(amp = 100, period_cycles = 24),
-        pump_Phi = B(amp = 100, period_cycles = 38),
+        pump_Theta = B(amp = 100, period_cycles = 471),
+        pump_Phi = B(amp = 100, period_cycles = 399),
     ),
     modsPrec = B(
         Bx = B(amp= 0.02, freq= 20.872e-3),
@@ -294,8 +292,7 @@ if __name__=="__main__":
     mgc(u"%load_ext autoreload")
     mgc(u"%autoreload 2")
     mgc(u"%matplotlib qt")
-    #glbP.p=p0
     init_comms()
     setupExperiment()
-    changeParams({'pulses.tPumpStart':10e-6})
-    tweakParams({'fields.Bz': 0.01, 'fields.By': 0.1})
+    #changeParams({'pulses.tPumpStart':10e-6})
+    #tweakParams({'fields.Bz': 0.01, 'fields.By': 0.1})

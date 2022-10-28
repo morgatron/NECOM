@@ -16,6 +16,7 @@ except ImportError:
 import numpy as np
 import inspect
 import pdb
+from functools import lru_cache
 
 B_PLOT = True
 SAMPLE_RATE = 1e6
@@ -121,6 +122,7 @@ def init(bMockHardware = False):
         from DPM import DockPlotManager 
         dpm = DockPlotManager("fg_settings")
 
+#@lru_cache(1)
 def setPulsePattern(chanName, seqDesc):
     #endCutPts = None
     #if chanName != "pump" and 0:
@@ -136,6 +138,7 @@ def setPulsePattern(chanName, seqDesc):
     if B_PLOT:
         dpm.addData(chanName, {"x":t, "y": y})
 
+@lru_cache(1)
 def setPulsePatterns(patternD, tTotal, othersOff=True, **kwargs):
     """
     
@@ -152,7 +155,7 @@ def setPulsePatterns(patternD, tTotal, othersOff=True, **kwargs):
     all_chan_names = chs.keys()
     used_chan_names = patternD.keys()
     for chan_name, pulse_desc in patternD.items():
-        setPulsePattern(chan_name, pulse_desc | kwargs | {"tTotal":tTotal-7e-6})
+        setPulsePattern(chan_name, Box(dict(pulse_desc) | kwargs | {"tTotal":tTotal-7e-6}, frozen_box=True))
 
     # Turn off all unused channels
     unused_chan_names = set(all_chan_names).difference(used_chan_names)
@@ -167,6 +170,19 @@ def allOff():
 
 #
 
+pumpAlign = Box({"patternD": {'pump': {'startTs': [120e-6, 2120e-6], 
+                        'widths':400e-6,
+                        'heights': [10,10],
+                        },
+            "bigBy" :{"startTs": [0, 2000e-6],
+                        "widths": 250e-6,
+                        "heights": [.5, -.5]},
+            "Bz" :{"startTs": [1000e-6, 3000e-6],
+                        "widths": 500e-6,
+                        "heights": [1, 1]},
+            }, 
+            "tTotal" : 4000e-6,
+            }, frozen_box=True)
 samplePatterns = Box({'pump': {'startTs': [20e-6, 2021e-6], 
                         'widths':300e-6,
                         'heights': [10,10],
@@ -183,8 +199,9 @@ if __name__=="__main__":
     from numpy import pi, sin, cos 
     t=np.arange(0,15e-3, 1e-6)
     y=np.sin(2*pi*t*1000)
-    init(True)
-    setPulsePatterns(samplePatterns, tTotal = 4000e-6)
+    init()
+    #setPulsePatterns(samplePatterns, tTotal = 4000e-6)
+    setPulsePatterns(**pumpAlign)
     #pfg=PmFgController()
     #pfg.setRates(1e6,1e6,1e6)
     #pfg.setWaveForms(y,y,y)
