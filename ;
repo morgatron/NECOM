@@ -148,9 +148,9 @@ class FG(object):
             mn, mx = x.min(), x.max()
             absMax = max([abs(mn), abs(mx)])
             sclTo = [mn/absMax, mx/absMax]
-            self.uploadWaveform(x, sclTo=sclTo, chanNum=chanNum)
+            self.uploadWaveform(x, sclTo=[-1,1], chanNum=chanNum)
             self.checkErr()
-            self.setLowHigh( -absMax, absMax, chanNum=chanNum )
+            self.setLowHigh( x.min(), x.max(), chanNum=chanNum )
         else:
             self.uploadWaveform(x, sclTo=None, chanNum=chanNum)
         self.checkErr()

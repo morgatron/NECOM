@@ -45,8 +45,6 @@ def init_comms():
     d.oven = tldevice("COMX")
     #acq.init(bRemote=True)
     #acq.subscribe(b'raw')
-    setupExperiment()
-    print("Experiment setup")
 
     fgs.init()
     d.fgs = fgs
@@ -117,42 +115,8 @@ def setupSyncedModulations(Bx=None, Bz=None, pump_Phi=None, pump_Theta=None, bAl
         d.wiggler.modOn()
     
 
-def setupMagPulses(tTotal, BxParams, ByParams, BzParams, period_cycles=2):
-    pass
-
-@lru_cache(1)
-def setupPumpPulses(tTotal, pulseParams, Nreps = 2):
-
-    t0 = pulseParams.t0
-    wvfm = makePulseTrain( t0 + tTotal*np.arange(Nreps),  
-        widths= Nreps*[width], heights=Nreps*[2.0], sampleRate=GLB_sampRate, Nsamples = 2*GLB_sampRate *(tTotal+5e-6) )
-    d.fg_chs.pump.uploadWaveform( wvfm )
-    d.fg_chs.pump.setTriggerMode("int")
-
-
-@lru_cache(1)
-def setupBigByPulses(tTotal, pulseParams, Nreps = 1):
-    t0, amp, width = pulseParams.t0, pulseParams.amp, pulseParams.width
-    
-    wvfm = makePulseTrain( startTs =t0 + tTotal*np.arange(2),  
-        pulseTimes = Nreps*[width, width], heights=[amp, -amp], 
-        sampleRate=GLB_sampRate, tTotal = tTotal*2 )
-    d.fgs.bigBy.uploadWaveform( wvfm )
-    d.fgs.bigBy.setTriggerMode("ext")
-
-def setupByPulses(tTotal, pulseParams, Nreps = 1):
-
-@lru_cache(1)
-def setupPumpAndNucPulses(tTotal, tPumpStart, tPumpWidth, tMagStart, tMagWidth):
-
-    pump_wvfm = makePulseTrain([tPumpStart, tTotal+tPumpStart],  pulseTimes = 2*[tPumpWidth], heights=2*[2.0], sampleRate=sampRate, Nsamples = 2*sampRate *(tTotal+5e-6) )
-    d.fg_chs.pump.uploadWaveform(pump_wvfm, chanNum = 0)
-    d.fg_chs.pump.setTriggerMode("int", chanNum=0)
-
-    Bz_wvfm = makePulseTrain([tMagStart, tTotal+tMagStart],  pulseTimes = 2*[tMagWidth], heights=[1,-1], sampleRate=sampRate, Nsamples = 2*sampRate *(tTotal+5e-6) )
-    d.pumpAndBzFG.uploadWaveform(Bz_wvfm, chanNum = 1)
-    d.pumpAndBzFG.setTriggerMode("int", chanNum=1)
-    #Set sync_out on
+def setupFGs(patterns, tTotal):
+    d.fgs.setPulsePatterns(patterns, tTotal)
 
 
 
@@ -162,12 +126,8 @@ def setupExperiment():
 def _setupExperiment(params):
     params=deepcopy(params)
     setupOven(**params.oven)
-    fgs_mod.setPulsePattern("pump", params.pulses.pump)
-    fgs_mod.setPulsePattern("bigBy", params.pulses.bigBy)
-    fgs_mod.
-    setupPumpAndNucPulses(**params.pump, **params.Bz_pulse)
-    setupDCFields(**params.dc_fields)
-
+    setupDCFields(**params.biasFields)
+    setupFGS(params.pulses)
     #acq.setScopeParams(acqTime=params.totalTime)
     sleep(0.2)
 

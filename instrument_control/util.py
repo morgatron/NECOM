@@ -7,7 +7,7 @@ import matplotlib
 from numpy.fft import fft, ifft
 import numpy as np
 import scipy as sp
-from scipy import random
+from numpy import random
 from scipy.interpolate import UnivariateSpline
 from scipy.signal import wiener, filtfilt, butter, gaussian
 from scipy.ndimage import filters
@@ -1121,7 +1121,6 @@ def normLorentzian(t, param):
     '''
     return 1./2./np.pi*param[0] /( (t-param[1])**2 + (param[0]/2)**2 )
 
-from scipy import random
 def lorentzDist(N=1,fwhm=0.5):
     """Generate random numbers according to a lorentz distribution
 
