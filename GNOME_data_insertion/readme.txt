@@ -1,0 +1,2 @@
+Small program that reads data from running NECOM experiment, while monitoring for new GNOME data files.
+When it sees the new files, it tries to put in the NECOM data, then copy to a new folder for sending.
