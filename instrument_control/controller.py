@@ -2,7 +2,9 @@
 Functions to set them all up given experiment parameters, as well as stop() and clear() to stop and clear the experiments.
 
 """
+import time
 import pdb
+from tkinter import W
 from box import Box
 from box import Box as B
 import numpy as np
@@ -15,6 +17,7 @@ from functools import lru_cache
 import fgs_mod as fgs
 import teensy_wiggler
 import tldevice
+from async_components import ZMQSubReadChunked
 
 glbP = shared_parameters.SharedParams("NECOM")
 #import fgAgilent
@@ -34,7 +37,9 @@ d = Box( #devices
     wiggler = teensy_wiggler,
     )
 
-def init_comms():
+def init_comms(bForce = False):
+    if hasattr(init_comms, "alreadyRun") and not bForce:
+        return
     global d
     print("set up DC fields")
     #d.coils.setModFreqs(3,4,5)
@@ -43,10 +48,9 @@ def init_comms():
     d.coils = tldevice.Device("COM6")
     #acq.init(bRemote=True)
     #acq.subscribe(b'raw')
-
     fgs.init()
     d.fgs = fgs
-
+    init_comms.alreadyRun = True
 
 #def retrievePresentOutputs():
     #outputs=Box()
@@ -70,11 +74,13 @@ def init_comms():
 
 @lru_cache(1)
 def setupDCFields(Bx, By, Bz):
-    d.coils.setFields(Bx, By, Bz)
+    d.coils.coil.x.current(Bx)
+    d.coils.coil.y.current(By)
+    d.coils.coil.z.current(Bz)
 
 @lru_cache(1)
 def setupOven(setpoint, pid_params=None):
-    d.oven.therm.pid.setpoint(set_temp)
+    d.oven.therm.pid.setpoint(setpoint)
 
 # precision coil current drivers
 @lru_cache(1) 
@@ -83,13 +89,14 @@ def setupPrecisionModulations( Bx, By, Bz ):
     - Each is a tuple: (amp, frequency)
     """
     mod_paramsL = [(ax,tup) for ax, tup in zip('xyz', [Bx,By,Bz]) if tup is not None ]
-    for ax, [amp, freq] in mod_paramsL:
-        d.coils[ax].field.modulation.amp(amp)
-        d.coils[ax].field.modulation.freq(freq)
+    for ax, par in mod_paramsL:
+        coil = d.coils.coil.__dict__[ax]
+        coil.modulation.amplitude(par.amp)
+        coil.modulation.frequency(par.freq)
     
 # Synced to rep rate- i.e. Teensy driven stuff
 @lru_cache(1)
-def setupSyncedModulations(Bx=None, Bz=None, pump_Phi=None, pump_Theta=None, bAllOff=False ): 
+def setupSyncedModulations(Bx=None, Bz=None, Bx_1 = None, Bz_1 = None, pump_Phi=None, pump_Theta=None, bAllOff=False ): 
     """
     - mods is a list of tuples: (ax, amp, period)
     """
@@ -99,12 +106,16 @@ def setupSyncedModulations(Bx=None, Bz=None, pump_Phi=None, pump_Theta=None, bAl
     if pump_Theta:
         modL.append((1, pump_Theta.amp, pump_Theta.period_cycles))
 
-    if Bx:
-        modL.append(["DAC0", *Bx])
     if Bz:
-        modL.append(["DAC1", *Bz])
+        modL.append(["dac0", Bz.amp, Bz.period_cycles])
+    if Bz_1:
+        modL.append(["dac0_1", Bz_1.amp, Bz_1.period_cycles])
+    if Bx:
+        modL.append(["dac1", Bx.amp, Bx.period_cycles])
+    if Bx_1:
+        modL.append(["dac1_1", Bx_1.amp, Bx_1.period_cycles])
     
-
+    print(modL)
     for mod_params in modL:
         d.wiggler.setMod(*mod_params)
     if bAllOff:
@@ -113,9 +124,8 @@ def setupSyncedModulations(Bx=None, Bz=None, pump_Phi=None, pump_Theta=None, bAl
         d.wiggler.modOn()
     
 
-def setupFGs(patterns, tTotal):
-    d.fgs.setPulsePatterns(patterns, tTotal)
-
+def setupFGs(patternD, tTotal):
+    d.fgs.setPulsePatterns(patternD, tTotal)
 
 
 def setupExperiment():
@@ -123,9 +133,12 @@ def setupExperiment():
 
 def _setupExperiment(params):
     params=deepcopy(params)
-    setupOven(**params.oven)
+    params=Box(params, frozen_box=True)
+    #setupOven(**params.oven)
     setupDCFields(**params.biasFields)
-    setupFGs(params.pulses)
+    setupFGs(**params.pulses)
+    setupSyncedModulations(**params.modsSynced)
+    setupPrecisionModulations(**params.modsPrec)
     #acq.setScopeParams(acqTime=params.totalTime)
     sleep(0.2)
 
@@ -150,149 +163,92 @@ def waitForStableTemp():
     while 1:
         T_now = d.oven.T()
         print(T_now)
-        if( abs(T_now - d.oven.pid.setpoint()) <1  ):
+        if( abs(T_now - d.oven.pid.setpoint()) <.5  ):
             stable_time += 1
         else:
             stable_time = 0
-        if stable_time > 30:
+        if stable_time > 20:
             print("calling it stable")
             break
         sleep(1)
 
-def setupPulsing(tTot, pump= None, bigBy=None, Bx = None, By=None, Bz = None):
-    if pump is not None:
-        setupPumpPulses(tTot, pump)
-    if bigBy is not None:
-        setupBigByPulses(tTot, bigBy)
+def doPumpAlign():
+    setupFGs(**pumpAlign)
+
+def recordRaw(name, Nsamples, metaD = {}, baseDir = "recorded", tStart = -1):
+    if tStart == 0:
+        tStart = time.time()
     
-    setupMagPulses(Bx, By, Bz)
+    if not name.endswith(".npy"):
+        name = name + '.npy'
+    fpath = os.path.join(baseDir, name)
+    with open(fpath[:-4] + '_params.yaml', 'w') as file:
+        file.write( glbP.P.to_yaml() )
+    #Save signature
+    np.savez(fpath[:-4] + "_signatures.npz", **glbP.loadArray("signatures"))
 
-## STUFF BELOW HERE DOESN"T BELONG--------------------------------------------
-#lasParamNames=[]#'prbI', 'prbT', 'pumpTime']
-#fieldParamNames=['Bx', 'By', 'Bz']
-#pulseParamNames1=['piX', 'piY', 'mPiX', 'mPiY',]
-#pulseParamNames2=['piXOff', 'mPiXOff', 'piYOff', 'mPiYOff',
-#    'pi2XOff', 'pi2YOff']#,'pi2RelWidth']
-#
-#def locAcquire(Naves=1, Nds=1, ):
-#    numAttempts=1
-#    while 1:
-#        numAttempts+=1
-#        sleep(0.2)
-#        _,out,dt=acq.acquireStreaming(Nmin=Naves, bNoStale=True)#Raw()
-#        #out=MT.smoothalong(out,Nds, axis=-1)[...,::Nds]
-#        out=util.downsample_npts(out,Nds, axis=-1)
-#        #outL.append(out)
-#        #out=np.mean(out, axis=0)
-#    t=np.arange(out.shape[-1])*dt*Nds
-#    return t, out
-#
-#def getZeroLevel(Naves=50, par=None):
-#    """Just turn off the pump for a little while and measure the level
-#    """
-#    if par is None:
-#        par=glbP.p
-#    oldPumpTime=par.pulseTiming.pumpTime
-#    par.pulseTiming.pumpTime=0
-#    _setupExperiment(par)#WithChanged(tau=4.1e-3, pulseSeqDesc=testSeq)
-#    t,dat=locAcquire(Naves)
-#    v0=dat.mean()
-#    par.pulseTiming.pumpTime=oldPumpTime
-#    _setupExperiment(par)#WithChanged(tau=4.1e-3, pulseSeqDesc=testSeq)
-#    return v0
-#
-#lasDevDict=dict(
-#    #prbI=1,
-#    #prbT=0.5,
-#    #pumpTime=-5e-6
-#    )
-#
-#import dill as pickle
-#def saveDataSet(filename, t, dat, sensorsD=None, grad=None, params=None, notes=''):
-#    if grad is None:
-#        grad=glbP.loadCal()
-#    if params is None:
-#        params=glbP.p
-#    basePath=datDir+filename
-#    infoD={
-#            'params':params,
-#            'notes':notes,
-#        }
-#
-#    baseDir=os.path.dirname(basePath)
-#    if not os.path.exists(baseDir):
-#        os.makedirs(baseDir)
-#    pickle.dump(infoD, open(basePath+'_pars.pkl', 'wb'), protocol=2)
-#    np.savez(basePath+'_t.npz', t)
-#    addSaved(filename, dat, sensorsD=sensorsD)
-#    #np.savez_compressed(basePath+'_dat000.npz', dat)
-#    np.savez(basePath+'_grad.npz', **grad)
-#    return
-#
-#def addSaved(filename, dat, sensorsD=None):
-#    basePath=datDir+filename
-#    if not os.path.exists(basePath+'_pars.pkl'):
-#        raise ValueError("No base data set")
-#    for k in range(100): 
-#        fname=basePath+'_dat{:03d}.npz'.format(k)
-#        if not os.path.exists(fname):
-#            np.savez(fname, data=dat)
-#            if sensorsD is not None:
-#                fnameSensors=basePath+'_sensors{:03d}.npz'.format(k)
-#                np.savez(fnameSensors, **sensorsD)
-#            break
-#    else:
-#        raise ValueError("Can't find a free spot for the file, last tried was: {}".format(fname))
-#    return
-#    
-#
-#
-#vSclFact=1.
-p0= B(
-    pulses=B(
-        pump = B( 
-           t0= 10e-6,
-           tWidth = 100e-6,
-           amp = 10.0,
-        ),
-        bigBy = B(
-            t0 = 0e-6,
-            tWidth = 50e-6,
-            amp = 1.0,
-        ),
-        By = B(
-            t0 = 5e-6,
-            tWidth = 5e-6,
-            amp = 2.0,
-        ),
-        tTot=1700e-6,
-    ),
-    biasFields=Box(
-        Bx=1.00,
-        By=-1.0,
-        Bz=-0.00,
-    ),
-    modsSynced = B(
-        Bx = B( amp= 1000, period_cycles = 54),
-        By = B( amp= 1000, period_cycles = 37),
-        #...
-        pump_Theta = B(amp = 100, period_cycles = 471),
-        pump_Phi = B(amp = 100, period_cycles = 399),
-    ),
-    modsPrec = B(
-        Bx = B(amp= 0.02, freq= 20.872e-3),
-        By = B(amp = 0.02, freq= 15.1e-3),
-        Bz = B(amp = 0.02, freq= 23.1e-3),
-    ),
-)
-
+    if metaD is not None:
+        with open(fpath[:-4] + '_meta.yaml', 'w') as file:
+            file.write( Box(metaD).to_yaml() )
+    IN_PORT = 5560
+    reader = ZMQSubReadChunked(port= IN_PORT, topic= 'raw')
+    Nwritten = 0
+    from npy_append_array import NpyAppendArray
+    with NpyAppendArray(fpath) as dat_arr, NpyAppendArray(fpath[:-4]+'_t.npy') as t_arr:
+        while 1: # wait until tStart
+            retrieved = reader.retrieve()
+            if retrieved:
+                tL = retrieved['data']['tL']
+                if tL[-1] >=tStart:
+                    ind = np.searchsorted(tL, tStart)
+                    datL = np.array(retrieved['data']['datL'][ind:])
+                    tL = np.array(tL[ind:])
+                    break
+        while 1:
+            dat_arr.append(datL)
+            t_arr.append(tL)
+            Nwritten += len(tL)
+            print(f'Written: {Nwritten} | ', end='')
+            if Nwritten > Nsamples:
+                break
+            while 1: 
+                retrieved= reader.retrieve(Nmin=1)
+                if retrieved:
+                    break
+            data = retrieved['data']
+            tL = np.array(data['tL'])
+            datL = np.array(data['datL'])
+    return t_arr, dat_arr
+pumpAlign = Box({"patternD": {'pump': {'startTs': [00e-6, 2000e-6], 
+                        'widths':400e-6,
+                        'heights': [7,4],
+                        },
+            "bigBy" :{"startTs": [000e-6,450e-6, 2000e-6, 2450e-6],
+                        "widths": [200e-6, 4e-6, 200e-6, 4e-6],
+                        "heights": [.5, -.4, -.5, .4]},
+            "Bz" :{"startTs": [1200e-6, 3200e-6],
+                        "widths": 500e-6,
+                        "heights": [1., -1.]},
+            }, 
+            "tTotal" : 4000e-6,
+            })
 if __name__=="__main__":
     from importlib import reload
-    mgc=get_ipython().magic
-    mgc(u"%load_ext autoreload")
-    mgc(u"%autoreload 2")
-    mgc(u"%matplotlib qt")
+    from IPython.core.interactiveshell import InteractiveShell
+    sh = InteractiveShell()
+    mgc= sh.run_line_magic#get_ipython().magic
+    mgc("load_ext", "autoreload")
+    mgc("autoreload", "2")
     init_comms()
-    setupExperiment()
+    #setupExperiment()
+    #recordRaw("test7", Nsamples = 200, metaD = {"width": 27}, tStart=0)
+    if 0:
+        for length in np.arange(10e-6, 100e-6, 10e-6):
+            setupTweaked({"pulses.patternD.bigBy.widths": length})
+            recordRaw("by_width",Nsamples = 200, metaD = {"width": length})
+
+    if 0:
+        P.pulses.patternD.bigBy | B(width = 5, heights=7)
+        changeParam(P | {} )
     #changeParams({'pulses.tPumpStart':10e-6})
     #tweakParams({'fields.Bz': 0.01, 'fields.By': 0.1})

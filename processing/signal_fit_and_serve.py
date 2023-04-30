@@ -27,115 +27,6 @@ from async_components import ZMQSubReadChunked, ChunkedSourcePlotter, ZMQChunked
 
 glbP = shared_parameters.SharedParams("NECOM")
 
-class FitServer(object):
-    PORT = "5561"
-    streamFile=None
-
-    def __init__(self, signalSource, fittingFunc, outputFunc, initialSignatures=None, signatureUpdateFunc=None):
-        
-
-
-        signalSource.init()
-
-        #acq.subscribe(b'seg')
-        self.updateGradProc(True)
-
-
-        self.sampRate=sampRate
-        Nhist=300
-        self.signalHist=np.zeros((Nhist, 3))
-        self.calFact=np.ones(3, dtype='f8')
-        self.modAmpL=[0.05,0.05,0.05]
-        self.modFreqL=[5,3,1]
-        #self.tAx=arange(Nhist)/self.sampRate
-        self.bStopStreaming=False
-        self.tHist=[]
-        self.tRate = 0
-        self.tLast = 0
-    def updateGradProc(self, justDoIt=False):
-        #print("check for updated grad")
-        if glbP.isCalUpdated() or justDoIt==True: 
-            cal=glbP.loadCal()
-            self.gradD= {key:cal['grad'][key]  for key in self.varsToFit}
-            t=cal['t']
-            self.p = glbP.p
-            #self.gradD={key: zeroMiddle(t, self.gradD[key], 100e-6,cal['pars'].pulseTiming.tau-100e-6) for key in self.gradD}
-            self.gradProcessedD=preProcessGrad(t, self.gradD, cal['pars'])
-            self.gwGrad.updateFromDict(self.gradProcessedD)
-
-    def update(self):
-        # self.signatures = updateSignatures()
-        # traces = self.signalSource.retrieveData()
-        # signals = self.fitFunc(traces)
-        # publish(signals)
-        # if self.bSaveToFile:
-        #   saveToFile(signals)
-        #datL=acq.checkForPublished()
-        #topic,(t0L,rawL,dt)=acq.checkForPublished()
-
-        tL, newTraces = self.signalSource.getWaiting()
-        fit_signals = self.fittingFunc(newTraces, self.signatures)
-        self.outputFunc(tL, fit_signals)
-
-        def update():
-            #sigPre = preProcessSig(t, rawL, self.p, subRef=self.gradD['ref'])
-            signal = fitSimp(sigPre, self.gradProcessedD, addDC=True)
-
-            self.signal = np.array(signal)
-            print("sent {} segs".format(len(signal)))
-            mag2Send=signal
-            #mag2Send[:,:3]/=self.calFact
-            msg=b'mag '+ pickle.dumps( (datD['t'], mag2Send) )
-            self.SOCKET.send(msg)
-
-            n = len(rawL)
-            self.tRate = (self.tRate + n/(datD['t'][-1]-self.tLast)*9 )/10
-            print('tRate:', self.tRate)
-            #print(datD['t'])
-
-            self.tLast=datD['t'][-1]
-
-
-        self.signatures = self.signatureUpdate(newTraces) #if necessary
-
-        if self.streamFile is not None:
-            self.signal.to_numpy().tofile(self.streamFile)
-        #else:
-        #    self.updateGradProc()
-        Nnew=self.signal.shape[0]
-        self.signalHist=np.roll(self.signalHist, -Nnew, axis=0)
-        self.signalHist[-Nnew:]=self.mag[:,:3]
-
-        if self.signalHist[0].mean()!=0:
-            #pdb.set_trace()
-            self.updateCals()
-            #self.bStopStreaming=True
-
-    def updateCals(self): # this will be moved to signature_calculator.py
-        """Update calibrations using known modulatons"""
-        tAx=np.arange(self.signalHist.shape[0])/self.sampRate
-        self.signalHist-=self.signalHist.mean(axis=0)
-        for k,f in enumerate(self.modFreqL):
-            Tpts=1./f*self.sampRate
-            N=int(np.floor(tAx.size/Tpts)*Tpts)
-            sinQuad=((np.sin(2*np.pi*f*tAx[:N])*self.signalHist[:N,k]).mean())
-            cosQuad=((np.cos(2*f*np.pi*tAx[:N])*self.signalHist[:N,k]).mean())
-            self.calFact[k]=np.sqrt( sinQuad**2  + cosQuad**2)/self.modAmpL[k]*2
-            amp=sinQuad + 1j*cosQuad
-            print(self.calFact[k])
-
-    def startSavingToFile(self, filename, notes=""):
-        datDir="c:/PulseMagData/magStreams/"
-        self.streamFile=open(datDir+filename+"_strm.npz", 'wb')
-        np.savez(datDir+filename+"_meta.npz", notes=notes, grad=self.gradD, pars=glbP.p)
-
-    def stopStreaming(self):
-        self.streamFile.close()
-        self.streamFile=None
-
-
-
-
 #_---------------------------------------------------
 # Redo:
 def fitting_func(traces, signatures, bReturnObjs = False):
@@ -181,7 +72,7 @@ def main():
         signatures = None,
         N_sent = 0,
         t_start = time.time(),
-        to_fit = ['Bx', 'By', 'pump_Theta']
+        to_fit = ["Bx_1", "Bz_1", "pump_Phi"]
     )
     reader = ZMQSubReadChunked(port = IN_PORT, topic = "raw")
     sender = ZMQChunkedPublisher(port = OUT_PORT, topic = "fitted")
@@ -190,7 +81,7 @@ def main():
             transformF = transformF,
             state_updateF = update_state,
             outputF = lambda args: sender.send(**args),
-            run_interval = 0.2,
+            run_interval = 0.1,
             state = state0,
             )
     # Plotter
@@ -203,12 +94,23 @@ def main():
     plotter = ChunkedSourcePlotter(
             inputF = getData,
             label = 'fitted',
-            poll_interval= 0.1,
+            poll_interval= 0.2,
             )
     transformer.start()
     plotter.start()
     return plotter, transformer
 
+
+def set_max_samples(N):
+    for itm in plotter.dpm.dataD.items():
+        itm[1][0].max_samples=N
+
+def set_to_fit(names):
+    transformer.state.to_fit = names
+
+def clearPlot():
+    for itm in plotter.dpm.dataD.items():
+        itm[1][0].clear()
 
 if __name__ == "__main__":
     from PyQt5.QtWidgets import QApplication
@@ -218,3 +120,6 @@ if __name__ == "__main__":
     def stop():
         transformer.stop()
         plotter.stop()
+    def start():
+        transformer.start()
+        plotter.start();

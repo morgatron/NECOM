@@ -5,6 +5,7 @@ Lots of historical baggage still here.
 """
 
 
+from tkinter import W
 from picoscope import ps5000a
 import numpy as np
 import zmq
@@ -15,6 +16,7 @@ import sys
 import dill as pickle
 import threading
 import time
+from async_components import ZMQChunkedPublisher
 
 
 def quickSetup(self, 
@@ -60,6 +62,7 @@ glbPORT_PAIR = "5558"
 glbSOCKET_PUBSUB=None
 glbPORT_PUBSUB = "5560"
 bPLOT=False
+glbSENDER = None
 
 
 curve=None
@@ -73,7 +76,7 @@ def init(bRemote=True):
         glbLOCAL=False
         initRemote()
 def initLocal():
-    global glbPS
+    global glbPS, glbSENDER
     try:
         try:
             glbPS.getAllUnitInfo()
@@ -99,9 +102,10 @@ def initLocal():
     glbSOCKET_PAIR = context.socket(zmq.PAIR)
     glbSOCKET_PAIR.set_hwm(2)
     glbSOCKET_PAIR.bind("tcp://*:%s" % glbPORT_PAIR)
-    glbSOCKET_PUBSUB = context.socket(zmq.PUB)
-    glbSOCKET_PUBSUB.set_hwm(5)
-    glbSOCKET_PUBSUB.bind("tcp://*:%s" % glbPORT_PUBSUB)
+    glbSENDER = ZMQChunkedPublisher(port = glbPORT_PUBSUB, topic = "raw")
+    #glbSOCKET_PUBSUB = context.socket(zmq.PUB)
+    #glbSOCKET_PUBSUB.set_hwm(5)
+    #glbSOCKET_PUBSUB.bind("tcp://*:%s" % glbPORT_PUBSUB)
     if bPLOT:
         import pyqtgraph as pg
         pg.setConfigOptions(antialias=True)
@@ -149,22 +153,8 @@ def startMonitoring():
             print('breaking')
             break
 
-        print('chked and reciewved')
-        sleep(0.1)
-        if glbSTREAMING:
-            acquireStreamingLatest(bPUBLISH=True)
-            #acquireRawStreaming(bPUBLISH=True)
-        elif glbCONTINUOUS and 0:
-            try: 
-                acquireRaw(bReacquire=True, bWait=False, bPUBLISH=True)
-            except OSError as e:
-                if e.args[0].find("PICO_CANCELLED")>=0 or e.args[0].find("NO_SAMPLES")>=0:
-                    print("got: ", e.args);
-                    print("restarting acquisition...")
-                    startAcquisition()
-                else: 
-                    raise e
-        sleep(0.1)
+        print('.', end ='')
+        sleep(0.2)
 
 def initRemote():
     context = zmq.Context()
@@ -189,6 +179,7 @@ def subscribe(topicFilter=None):
 def closeSockets():
     if glbLOCAL:
         glbPS.close()
+        glbSENDER.close()
     glbSOCKET_PAIR.close()
     glbSOCKET_PUBSUB.close()
 
@@ -403,7 +394,8 @@ def publishRaw(data, t=None, Nds=1):
     dt=glbPS.sampleInterval*Nds
     msg=b'raw '+ pickle.dumps(dict(data=data, dt=dt, t=t))
     #glbSOCKET_PAIR.send(msg)
-    glbSOCKET_PUBSUB.send(msg)
+    #glbSOCKET_PUBSUB.send(msg)
+    glbSENDER.send(tL = t, datL =  data)
 
 def startMonitorThread(*args, **kwargs):
     startMonitorThread.thread=threading.Thread(target=startMonitoring, args=args, kwargs=kwargs)
@@ -411,9 +403,9 @@ def startMonitorThread(*args, **kwargs):
     startMonitorThread.thread.start()
 
 def startStreamingThread(*args, **kwargs):
+    #if not glbSTREAMING:
+        #startStreaming()
     def streamingRecv(*args, **kwargs):
-        if not glbSTREAMING:
-            startStreaming()
         while glbSTREAMING:
             acquireStreamingLatest(bPUBLISH=True)
             sleep(0.1)
@@ -461,7 +453,7 @@ class PreprocessCallback(object):
         sm=util.smooth(dat[dumpN:],3) #smooth out noise a little
         thresh=3000 #don't look at the lowest points
         inds=np.where(sm>thresh)[0]
-        inds=inds[1:][np.diff(inds)>10] #look for a gap in the high values
+        inds=inds[1:][np.diff(inds)>5] #look for a gap in the high values
         inds+=dumpN
         return inds #indices of the rising edges
     def setTotalIntervalLength(self, newT):
@@ -521,7 +513,7 @@ def startStreaming(totalLength=None, bKeepSampsPerSeg=True):
     glbPS.quickSetup(chanAParams=dict(coupling="DC", VRange=curAcqD['VRange']),
                    chanBParams=dict(coupling="DC", VRange=5.), 
                 nCaps=1,
-            sampleRate=3e6, acqTime=0.20,resolution=15,
+            sampleRate=3e6, acqTime=0.2,resolution=15,
             triggerParams=dict(trigSrc="B", threshold_V=1.0, 
                     direction="Rising", delay=0,enabled=False)
               )
@@ -584,7 +576,7 @@ def acquireStreamingLatest(bPUBLISH=True):
     """ Just return the latest values from the callback
     """
     
-    #print("s", end='')
+    print("s", end='')
     if not glbLOCAL:
         out=checkForPublished()
         if out is None:
@@ -632,6 +624,7 @@ def acquireStreamingLatest(bPUBLISH=True):
         lag=time.time()-t[-1]
         print("Pub: {} segments, last at {} (lag:{}), Rate:{}".format(len(datL), t[-1], lag, Nstreamed/tElapsed))
         if lag>0.5:
+            print("lag too much, restarting stream")
             startStreaming(bKeepSampsPerSeg=True)
 
     dt=glbPS.sampleInterval*glbPS.Nds
@@ -665,7 +658,9 @@ if __name__=="__main__":
     #import time
     init(bRemote=False)
     startMonitorThread()
+    startStreaming()
     startStreamingThread()
+    #startMonitoring()
     print("initialised PS")
     #startStreaming()
     #print("Streaming started")

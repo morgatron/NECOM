@@ -90,6 +90,7 @@ class FG(object):
             self.addr=addr
         self.connect();
         self.curWaveform = [None]*self.numChans
+        self.last_upload_call = {}
         
 
 
@@ -142,6 +143,12 @@ class FG(object):
     def setOutputWaveform(self, t, x, chanNum=0, bUseFullScale=True):
         """Upload a waveform (t, x) and set it as active on channel chNum
         """
+        last_p = self.last_upload_call[chanNum] if chanNum in self.last_upload_call else None
+        if last_p and np.all(t == last_p[0]) and np.all(x == last_p[1]) and bUseFullScale == last_p[2]:
+            print("skipping repeat upload")
+            return
+        else:
+            print("running setOutputWaveform")
         self.setOutputState(0, chanNum)
         self.checkErr()
         if bUseFullScale:
@@ -153,10 +160,11 @@ class FG(object):
             self.setLowHigh( -absMax, absMax, chanNum=chanNum )
         else:
             self.uploadWaveform(x, sclTo=None, chanNum=chanNum)
-        self.checkErr()
+            self.checkErr()
         self.setRate(1/(t[1]-t[0]), chanNum=chanNum)#Period(t[-1]-t[0])
         self.checkErr()
         self.setOutputState(1, chanNum=chanNum)
+        self.last_upload_call[chanNum] = [t, x, bUseFullScale]
 
     def setLH(self, low, high, chanNum=0):
         #self.setAmp(0.01)

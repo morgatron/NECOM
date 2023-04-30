@@ -86,67 +86,6 @@ from async_components import ZMQSubReadChunked, ZMQSubReadData, ZMQPubSendData, 
 
 glbP = shared_parameters.SharedParams("NECOM")
 
-glbSOCKET_PUBSUB =None
-glbPORT_PUBSUB = 5560
-def subscribe():
-    global glbSOCKET_PUBSUB
-    glbSOCKET_PUBSUB = zmq.Context().socket(zmq.SUB)
-    glbSOCKET_PUBSUB.set_hwm(5)
-    glbSOCKET_PUBSUB.connect("tcp://localhost:%s" % glbPORT_PUBSUB)
-    glbSOCKET_PUBSUB.setsockopt(zmq.SUBSCRIBE, b"raw")
-
-
-tLast = 0
-dt_last = 0
-def getData(Nmin = 20):
-    global tLast, dt_last
-    datL = []
-    tL = []
-    while len(datL) < Nmin:
-        while glbSOCKET_PUBSUB.poll(10):
-            topic, msg = glbSOCKET_PUBSUB.recv().split(b' ', 1)
-
-            datD = pickle.loads(msg)
-            t = datD['t']
-            dt=datD['dt']
-            dts = np.diff(t)
-            newData=datD['data']
-            datL.extend(newData)
-            tL.extend(t)
-    try:
-        newData=np.vstack(datL)
-    except ValueError: # if they're not all the same length we'll trim them -- but this may be the sign of a problem
-        print("clipping...")
-        newMaxL=min([r.size for r in newData])
-        newData=[r[:newMaxL] for r in newData]
-    
-    dt_last = dts.mean()
-    dts = np.diff([tLast]+tL)
-    if(not all( (dts-dt_last)/dt_last < 0.1 )):
-        print(dts)
-    #print(dts)
-    tLast = tL[-1]
-    return tL, dt, newData
-
-
-dpm = None
-glb_RUN = False
-glb_INITED = False
-def init():
-    global dpm
-    global glb_INITED
-    if dpm is not None:
-        close()
-    subscribe()
-    dpm = DPM.DockPlotManager("signatures")
-    dpm.addDockPlot("sigs")
-    dpm.addDockPlot("sigs_90")
-    glb_INITED = True
-
-data = None
-t = None
-
-
 def calc_square_mod_vals(cycle, modParamD, phase=0):
     param2val = {}
     for key, [amp,period] in modParamD:
@@ -154,34 +93,58 @@ def calc_square_mod_vals(cycle, modParamD, phase=0):
         param2val[key] = amp*(1.0 if (cycle+cycle_offset)%period-period/2 > 0 else -1.0)
     return param2val
 
-def calc_new_sig(t_cycle, old_sig, new_data, period, amp = 1, periods2ave = 100, phase=0):
-    amp = 1
-    if old_sig is None:
-        old_sig = np.zeros(new_data.shape[1], dtype='f8')
+def calc_new_sig_quads(t_cycle, old_quads,  new_data, period, partially_calced_quads= None, amp = 1, periods2ave = 100, phase=0):
+    if amp == 0:
+        return old_quads
+    zeroArr = lambda: np.zeros(new_data.shape[1], dtype='f8')
+    #cycle_offset = int(phase/(2*pi)*period)
+
     N_new = len(new_data)
-    cycle_offset = int(phase/(2*pi)*period)
-    tAx = (t_cycle + cycle_offset) + np.arange(N_new)
-    amps = np.where( tAx%period-period/2 > 0, 1/amp, -1/amp )
-    #print(f"amps.shape: {amps.shape}")
-    new_sig_contribution = (amps[:,None]*new_data).sum(axis=0)
-    Nave = periods2ave*period
-    #print(f"Nave: {Nave}, N_new: {N_new}")
-    new_sig = ((Nave - N_new)* old_sig + new_sig_contribution)/Nave
-    return new_sig
+    N_partial = (t_cycle - N_new)%period # Number of traces already averaged
+
+    if old_quads is None:
+        quads = [zeroArr(), zeroArr()]
+        N_partial = 0
+    else:
+        quads = [el.copy() for el in old_quads]
+    if partially_calced_quads is None:
+        partially_calced_quads = [zeroArr(), zeroArr()]
+
+    tAx = t_cycle  + np.arange(N_new)
+    #tAx90 = tAx + period/2
+    amps = 1/amp*np.sin(tAx/period*2*pi)
+    amps90 = 1/amp*np.cos(tAx/period*2*pi)
+    #amps = np.where( tAx%period-period/2 > 0, 1/amp, -1/amp )
+    #add up until end 
+    ind = 0
+    ind_next_period = period - N_partial 
+    periods2ave = periods2ave/period
+    aveF = lambda cur, new: (cur*(periods2ave-1) + new/period)/periods2ave
+    print("N_partial: ", N_partial)
+    while 1:
+        slc = slice(ind, ind_next_period )
+        print("slice: ", slc)
+        #print("amps[slc]: ", amps[slc], amps90[slc])
+        partially_calced_quads[0] += (amps[slc,None]*new_data[slc]).sum(axis=0)
+        partially_calced_quads[1] += (amps90[slc,None]*new_data[slc]).sum(axis=0)
+
+        print("ind = {}".format(ind))
+        ind = ind_next_period
+        ind_next_period += period
+        if ind <=N_new:
+            print("adding period: periods2ave = {}".format(periods2ave))
+            quads= [aveF(quads[0], partially_calced_quads[0]), 
+                    aveF(quads[1], partially_calced_quads[1])]
+            partially_calced_quads[0] = zeroArr()
+            partially_calced_quads[1] = zeroArr()
+        if ind >= N_new:
+            print("breaking: N_new = {}, N_partial".format(N_new))
+            break
+
+    return quads, partially_calced_quads
 
 
-state = Box( t_cycles = 0,
-            b_monitor_phases = True,
-            t_last_change = 0,
-            sigs = {},
-            sigs_90 = {},
-            lags = {},
-            last_write = 0,
-            last_plot = 0,
-            periods2ave = 100,
-            mod_paramD = None,
-            )
-
+#Unused
 def find_t0(t_cur, periods, phis, go_back = 30000, go_forward=1000):
     valsL = []
     errL = []
@@ -192,41 +155,37 @@ def find_t0(t_cur, periods, phis, go_back = 30000, go_forward=1000):
         errL.append(sum(vals))
     t0 = ts2search[np.argmin(errL)]
     new_t = t_cur + (t_cur-t0)
-    #print(f"new_t, old_t: {new_t}, {t_cur}")
     return new_t
 
 
 def update_state(new_data, state):
     mod_params = state['mod_paramD']
+    Nave = state['Nave']
     #t,dt, newData = new_data 
     newData = np.array(new_data['data']['datL'])
     t = np.array(new_data['data']['tL'])
 
-    new_sigs = {
-        label : calc_new_sig(state.t_cycles, 
-            old_sig = state.sigs[label] if label in state.sigs else None,
+    if state['ref'] is None:
+        state['ref'] = np.zeros(newData.shape[1])
+    state['ref'] = ((Nave-1)*state['ref'] + newData.mean(axis=0))/Nave
+    newData = newData - 1*state['ref'][None,:]
+
+    #Calculate both quadratures at once, but only using integer number of periods.
+    #Remainder data is multiplied/summed a usual, but not added to the running average.
+    # It's instead returned so the summing can be finished when more data comes in
+    new_sig_quads_and_partials = {
+        label : calc_new_sig_quads(state.t_cycles, 
+            old_quads = state.sig_quads[label] if label in state.sig_quads else None,
             new_data=newData, 
             period=params.period_cycles, 
+            partially_calced_quads = state.partial_quads[label] if label in state.partial_quads else None,
             amp = params.amp, 
             periods2ave = state.periods2ave
-        )
+            )
         for label, params in mod_params.items()
     }
-    #for label, params in mod_params.items():
-        #old_sig = state.sigs[label] if label in state.sigs else None
-        #state.sigs[label] = calc_new_sig(state.t_cycles, old_sig = old_sig, new_data=newData, period=params.period_cycles, amp = params.amp, periods2ave = state.periods2ave)
-
-    new_sigs_90 = {
-        label : calc_new_sig(state.t_cycles, 
-            old_sig = state.sigs[label] if label in state.sigs_90 else None,
-            new_data=newData, 
-            period=params.period_cycles, 
-            amp = params.amp, 
-            periods2ave = state.periods2ave,
-            phase = pi/2
-        )
-        for label, params in mod_params.items()
-    }
+    partial_quads = {label: val[1] for label, val in new_sig_quads_and_partials.items()}
+    sig_quads = {label: val[0] for label, val in new_sig_quads_and_partials.items()}
     def calc_angle(sig_x, sig_y):
         sig_x_sm = util.smooth(sig_x, 20)
         sig_y_sm = util.smooth(sig_y, 20)
@@ -235,32 +194,54 @@ def update_state(new_data, state):
         y = abs(sig_y_sm).sum()
         return atan(sgn*y/x)
 
-    phase_lags = {label: calc_angle(new_sigs[label], new_sigs_90[label]) for label in mod_params}
-    #print({label: "{:.3f}".format(val) for label, val in phase_lags.items()})
+    phase_lags = {label: calc_angle(*sig_quads[label]) for label in mod_params}
     #if not all( int(lags)==0 for new_lag in lags):
         #print(lags)
-    
+    if glbP.changedSinceLoad() and 0:
+        state.mod_paramD = glbP.P.modsSynced.copy()
+        print("realoding mod_paramD")
+
     t_cycles = state.t_cycles + len(newData)
     do_write = t_cycles - state.last_write > 200
     last_write =  t_cycles if do_write else state.last_write
-    return Box({"sigs": new_sigs,
-            "sigs_90": new_sigs_90,
+    #rint(state.t_cycles)
+    print(state.lags)
+    state.update({"sig_quads": sig_quads,
+            "partial_quads": partial_quads,
             "lags":phase_lags,
             "t_cycles": state.t_cycles + len(newData),
             "do_write": do_write,
             "last_write": last_write,
-            "mod_paramD": state['mod_paramD'],
-            "periods2ave": state['periods2ave']
             })
+    return state
+    #return Box({"sigs": new_sigs,
+    #        "sigs_90": new_sigs_90,
+    #        "lags":phase_lags,
+    #        "t_cycles": state.t_cycles + len(newData),
+    #        "do_write": do_write,
+    #        "last_write": last_write,
+    #        "mod_paramD": state['mod_paramD'],
+    #        "periods2ave": state['periods2ave']
+    #        })
+
 
 def transformF(new_data, state):
 
     if state.do_write:
-        print("saving signatures")
         #state.t_cycles = find_t0(state.t_cycles, [p.period_cycles for _,p in mod_paramD.items()], 
         #            state.lags.values())
-        sigAs = {label: cos(state.lags[label])*state.sigs[label] + sin(state.lags[label])*state.sigs_90[label] for label in state.sigs}
+        def calcNorm(sig0, sig90, lag):
+            sigA = cos(lag)*sig0 + sin(lag)*sig90
+            return sigA
+        sigAs = {label: calcNorm(*state.sig_quads[label], state.lags[label]) for label in state.sig_quads }
+        magnitudes = {label: np.sqrt(np.mean(sigA**2)) for label, sigA in sigAs.items()}
+        print("MAGNITUDES: {} ".format([f"{label}: {mag:.3f}:" for label, mag in magnitudes.items()  ]))
+        #sigAs = {label: state.sig_quads[label][0] for label in state.sig_quads}
+        #sigAs.update({str(label) + '_90': state.sig_quads[label][1] for label in state.sig_quads})
+
         glbP.saveArray(signatures = sigAs)
+
+        sigAs = {label: sigAs[label]/(magnitudes[label])for label in sigAs}
         return sigAs
 
     else:
@@ -276,85 +257,26 @@ def transformF(new_data, state):
     #state.t_cycles += len(newData)
     
 
-
-IN_PORT = 5560
-datL = []
-t_L = []
-tLast = 0
-def on_timer():
-    if glbP.changedSinceLoad() or state.mod_paramD is None:
-        state.mod_paramD = glbP.P.modsSynced.copy()
-    resp = getData()
-    if resp is None:
-        #print("Nothing recieved")
-        return
-    tL, dt, newData = resp
-    #datL.extend(newData)
-    #t_L.extend(tL)
-    #t_cycle=np.arange(newData[0].size)*dt
-
-    for label, params in state.mod_paramD.items():
-        old_sig = state.sigs[label] if label in state.sigs else None
-        state.sigs[label] = calc_new_sig(state.t_cycles, old_sig = old_sig, new_data=newData, period=params.period_cycles, amp = params.amp, periods2ave = state.periods2ave)
-
-    if state.b_monitor_phases:
-        phase_lags = {}
-        for label, params in state.mod_paramD.items():
-            old_sig = state.sigs_90[label] if label in state.sigs_90 else None
-            state.sigs_90[label] = calc_new_sig(state.t_cycles, old_sig = old_sig, new_data=newData, period=params.period_cycles, amp = params.amp, periods2ave = state.periods2ave, phase=pi/2)
-
-            xSig = util.smooth(state.sigs[label], 20)
-            ySig = util.smooth(state.sigs_90[label], 20)
-            sgn =  1 if np.sum(xSig*ySig)>0 else -1
-            x = abs(xSig).sum()
-            y = abs(ySig).sum()
-            phase_lags[label] = atan(sgn*y/x)
-        #print({label: "{:.3f}".format(val) for label, val in phase_lags.items()})
-        state.lags = phase_lags
-        #if not all( int(lags)==0 for new_lag in lags):
-            #print(lags)
-
-        if (state.t_cycles - state.t_last_change > 1000) and 0:
-            state.b_monitor_phases = False
-        
-
-    # Need a mechanism to sync
-    #mod_valD = calc_square_mod_vals(cycle, modParamD)
-    #sig_calculator.update(data, mod_valD)
-
-    if state.t_cycles > state.last_write + 1000:
-        if state.last_write != 0:
-            print("saving signatures")
-
-            #state.t_cycles = find_t0(state.t_cycles, [p.period_cycles for _,p in mod_paramD.items()], 
-            #            state.lags.values())
-            sigAs = {label: cos(state.lags[label])*state.sigs[label] + sin(state.lags[label])*state.sigs_90[label] for label in state.sigs}
-            glbP.saveArray(signatures = sigAs)
-        state.last_write = state.t_cycles
-
-    #plot
-    if state.t_cycles > state.last_plot + 200:
-        xAx = np.arange(newData.shape[-1])
-        for label, sig in state.sigs.items():
-            dpm.dockD['sigs'].addData(label, {'x':xAx, 'y': sig})
-        for label, sig in state.sigs_90.items():
-            dpm.dockD['sigs_90'].addData(label, {'x':xAx, 'y': sig})
-        state.last_plot = state.last_plot + 200
-    state.t_cycles += len(newData)
-
+def getTestModParamD():
+    p = glbP.P.modsSynced.copy()
+    trimmed = Box (Bz = p.Bz, Bx = p.Bx)
+    return trimmed
 
 IN_PORT = 5560
 def main():
 
     state0 = Box({
-        "sigs": {},
-        "sigs_90": {},
+        "sig_quads": {},
+        "partial_quads": {},
         "lags": {},
         "t_cycles": 0,
         "do_write": False,
         "mod_paramD" : glbP.P.modsSynced.copy(),
+        #"mod_paramD" : getTestModParamD(),#glbP.P.modsSynced.copy(),
         "last_write": 0,
-        "periods2ave": 100,
+        "periods2ave": 125*60,
+        "Nave" : 40000,
+        'ref': None,
     })
     reader = ZMQSubReadChunked(port = IN_PORT, topic = "raw")
     sender = ZMQPubSendData(port = IN_PORT+1, topic = "signatures")

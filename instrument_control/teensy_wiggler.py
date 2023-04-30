@@ -51,14 +51,19 @@ def moveMany(movePairs):
         msg = msg + f" {ax}{steps}"
     write_and_check_err(msg)
 
+def modInt():
+    write_and_check_err("modInt")
 def modOn():
     write_and_check_err("modOn")
 def modOff():
     write_and_check_err("modOff")
+
 def setMod(ax, amp, period):
     if hasattr(ax, "lower"):
-        ax = ord(ax.lower()) - ord("a")
-    if ax not in [0,1,2,3, "dac0", "dac1"]:
+        ax = ax.lower()
+        if len(ax)==1:
+            ax = ord(ax.lower()) - ord("a")
+    if ax not in [0,1,2,3, "dac0", "dac1","dac0_1", "dac1_1"]:
         raise ValueError("ax should resolve to one of 0,1,2,3")
     msg = f"set_mod {ax} {amp} {period}"
     write_and_check_err(msg)

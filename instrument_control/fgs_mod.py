@@ -16,7 +16,6 @@ except ImportError:
 import numpy as np
 import inspect
 import pdb
-from functools import lru_cache
 
 B_PLOT = True
 SAMPLE_RATE = 1e6
@@ -122,7 +121,6 @@ def init(bMockHardware = False):
         from DPM import DockPlotManager 
         dpm = DockPlotManager("fg_settings")
 
-#@lru_cache(1)
 def setPulsePattern(chanName, seqDesc):
     #endCutPts = None
     #if chanName != "pump" and 0:
@@ -138,7 +136,6 @@ def setPulsePattern(chanName, seqDesc):
     if B_PLOT:
         dpm.addData(chanName, {"x":t, "y": y})
 
-@lru_cache(1)
 def setPulsePatterns(patternD, tTotal, othersOff=True, **kwargs):
     """
     
@@ -170,19 +167,19 @@ def allOff():
 
 #
 
-pumpAlign = Box({"patternD": {'pump': {'startTs': [120e-6, 2120e-6], 
+pumpAlign = Box({"patternD": {'pump': {'startTs': [00e-6, 2000e-6], 
                         'widths':400e-6,
-                        'heights': [10,10],
+                        'heights': [6,4],
                         },
-            "bigBy" :{"startTs": [0, 2000e-6],
-                        "widths": 250e-6,
+            "bigBy" :{"startTs": [200e-6, 2200e-6],
+                        "widths": 400e-6,
                         "heights": [.5, -.5]},
             "Bz" :{"startTs": [1000e-6, 3000e-6],
                         "widths": 500e-6,
-                        "heights": [1, 1]},
+                        "heights": [1., -1.]},
             }, 
             "tTotal" : 4000e-6,
-            }, frozen_box=True)
+            })
 samplePatterns = Box({'pump': {'startTs': [20e-6, 2021e-6], 
                         'widths':300e-6,
                         'heights': [10,10],
@@ -192,15 +189,26 @@ samplePatterns = Box({'pump': {'startTs': [20e-6, 2021e-6],
                         "heights": [1, -1]},
             "Bx" :{"startTs": [500e-6, 2500e-6],
                         "widths": 100e-6,
-                        "heights": [1, 1]},
+                        "heights": [1, -1]},
             })
 
+base= Box({"patternD": {'pump': {'startTs': [1e-6, 2001e-6], 
+                        'widths':250e-6,
+                        'heights': [10,10],
+                        },
+            "bigBy" :{"startTs": [0, 2000e-6],
+                        "widths": 50e-6,
+                        "heights": [1, -1]},
+            }, 
+            "tTotal" : 4000e-6,
+            })
 if __name__=="__main__":
     from numpy import pi, sin, cos 
     t=np.arange(0,15e-3, 1e-6)
     y=np.sin(2*pi*t*1000)
     init()
     #setPulsePatterns(samplePatterns, tTotal = 4000e-6)
+    #setPulsePatterns(**pumpAlign)
     setPulsePatterns(**pumpAlign)
     #pfg=PmFgController()
     #pfg.setRates(1e6,1e6,1e6)

@@ -19,7 +19,7 @@ t = linspace(0,3e-3, 2000)
 
 # Should read these from shared_parameters
 Bx = (1-cos(w*t)) * exp(-t/T1)
-By = sin(w*t) * exp(-t/T1)
+Bz = sin(w*t) * exp(-t/T1)
 
 pump_Theta = cos(w*t)*exp(-t/T1) 
 pump_Phi = sin(w*t)*exp(-t/T1) 
@@ -27,7 +27,7 @@ pump_Phi = sin(w*t)*exp(-t/T1)
 DT = 0.02 #  hopeully can keep up!!]
 
 
-basis = np.array([Bx, By, pump_Theta, pump_Phi])
+basis = np.array([Bx, Bz, pump_Theta, pump_Phi])
 
 def make_generator(f_of_t, sclNoise, smthT, dt = DT):
     s = random.normal()
@@ -60,7 +60,7 @@ def update_sig_gens(mod_pars):
     #sig_gens.By = make_generator(lambda t: sin(2*pi*t), .1, smthT=0.1),
     #sig_gens.By = make_generator(lambda t: sin(2*pi*t), .1, smthT=0.1),
     sig_gens.Bx = make_generator(get_smth_square(mod_pars.Bx.period_cycles*DT, amp = mod_pars.Bx.amp), .1, smthT=0.05)
-    sig_gens.By = make_generator(get_smth_square(mod_pars.By.period_cycles*DT, amp = mod_pars.By.amp), .1, smthT=0.05)
+    sig_gens.Bz = make_generator(get_smth_square(mod_pars.Bz.period_cycles*DT, amp = mod_pars.Bz.amp), .1, smthT=0.05)
     sig_gens.pump_Theta = make_generator(get_smth_square(mod_pars.pump_Theta.period_cycles*DT, amp = mod_pars.pump_Theta.amp), .1, smthT=0.1)
     sig_gens.pump_Phi = make_generator(get_smth_square(mod_pars.pump_Phi.period_cycles*DT, amp = mod_pars.pump_Phi.amp), .1, smthT=0.1)
     return sig_gens
@@ -132,7 +132,7 @@ if __name__ == "__main__":
         ion()
         plot(t, pump_y);
         plot(t, pump_z);
-        plot(t, By);
+        plot(t, Bz);
         plot(t, Bz);
         sigG = total_sig_G()
         sigs = [sigG.__next__() for k in range(500)]

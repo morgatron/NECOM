@@ -14,6 +14,9 @@ def split_into_minus_plus(t, y):
     return {'m': {'x':t1, 'y':(y1 - y2)}, 'p': {'x':t1, 'y':(y1 + y2)}}
 
 
+ref = None
+ave = None
+Nave = 20
 def processStream(data, metaData = {}, Nread = None):
     print(f"{data.keys}")
     tL = data['tL']
@@ -24,11 +27,20 @@ def processStream(data, metaData = {}, Nread = None):
     if 'dt' in metaData:
          t *= metaData['dt']
 
+    global ref, ave
+    if ref is None:
+        ref = mnY*0
+    if ave is None:
+        ave = mnY*0
+    ave = ((Nave-1)*ave + mnY)/Nave
+    mnY = mnY - ref
     data = {'raw': {'x': t, 'y': mnY}}
     data |= split_into_minus_plus(t, mnY)
     return data# {'data':data, "metaData":metaData, 'Nread': N}
 
-
+def setRef():
+    global ref, ave
+    ref[:] = ave
 
 
 IN_PORT = 5560
@@ -39,7 +51,7 @@ def main():
             preProcessF = lambda d: processStream(d['data'], d['metaData']) if d else None,
             label = 'raw',
             defaultPlotKwargs = dict(mode=0), # Replace mode
-            poll_interval=0.2
+            poll_interval=0.1
             )
     return plotter
 
