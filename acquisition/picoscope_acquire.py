@@ -448,14 +448,19 @@ class PreprocessCallback(object):
         self.tLast=0
         self.totalSegments=0
 
-    def findTrigs(self, dat):
-        dumpN=200 #Throw away first few points since the last trigger
+    def findTrigs(self, dat, dumpN = 200, thresh = 3000):
         sm=util.smooth(dat[dumpN:],3) #smooth out noise a little
-        thresh=3000 #don't look at the lowest points
         inds=np.where(sm>thresh)[0]
         inds=inds[1:][np.diff(inds)>5] #look for a gap in the high values
         inds+=dumpN
         return inds #indices of the rising edges
+    
+    @classmethod
+    def readFlagsFromTrigTrace(trigTrace, par):
+        trigCommFlags = sum([(trigTraces[:, slc].mean()>trigCommThresh) << k for k,slc in enumerate(trigCommSlices) ])
+        return trigCommFlags
+        # somehow need to get sample interval and slice parameters in here. Probably in the init...
+        
     def setTotalIntervalLength(self, newT):
         self.NptsPerSegment=int(newT/self.sampleInterval)
 
@@ -484,8 +489,9 @@ class PreprocessCallback(object):
                 self.tLast=tA[-1]
                 for t,trgI in zip(tA, [0]+list(trigInds[:-1])):
                     #print(trgI, self.NptsPerSegment)
-
-                    self.q.put_nowait((t, newDat[0,trgI:trgI+self.NptsPerSegment]) )
+                    yTrace, trigTrace = newDat[:,trgI:trgI+self.NptsPerSegment]
+                    trigCommFlags = self.readFlagsFromTrigTrace(trigTrace)
+                    self.q.put_nowait((t, trigCommFlags, yTrace) )
                 self.totalSegments+=len(trigInds)
             else:
                 Nprocessed=0
