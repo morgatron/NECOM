@@ -204,7 +204,7 @@ def setScopeParams(acqTime=None, VRange=None,
 setScopeParams.lastAcqD=None
 
 scopeDefaults=dict( 
-    VRange=1.0, 
+    VRange=2.0,  # Should probably be 1.0
     Ncaps=100, 
     sampleRate=3e6, 
     acqTime=1./60.-20e-6, 
@@ -380,8 +380,6 @@ def acquireRaw(bReacquire=False, bWait=True, bPUBLISH=True):
     
     t=np.arange(data.shape[0])*glbPS.sampleInterval*data.shape[-1]
     if bPUBLISH:
-        #msg=b'raw '+ pickle.dumps(zip(t,data), glbPS.sampleInterval)
-        #glbSOCKET_PAIR.send(msg)
         publishRaw(data, Nds=1)
         glbSOCKET_PUBSUB.send(msg)
         #print("Publishing raw data")
@@ -392,6 +390,7 @@ def acquireRaw(bReacquire=False, bWait=True, bPUBLISH=True):
 
 def publishRaw(data, t=None, Nds=1):
     dt=glbPS.sampleInterval*Nds
+    #chunkedPublisher.send(data=data, t=t)
     msg=b'raw '+ pickle.dumps(dict(data=data, dt=dt, t=t))
     #glbSOCKET_PAIR.send(msg)
     #glbSOCKET_PUBSUB.send(msg)
@@ -447,17 +446,39 @@ class PreprocessCallback(object):
         self.sampleInterval=sampleInterval
         self.tLast=0
         self.totalSegments=0
+        tcPars = dict (
+            startT = 1000e-6,
+            DT = 100e-6,
+            thresh = 1000,
+            N = 8,
+            rate = 128, #Hz
+        )
+        tcStartInds = (tcPars['startT'] + np.arange(tcPars['N'])*tcPars['DT'])/sampleInterval + 1
+        tcStopInds = (tcPars['startT'] + (1+np.arange(tcPars['N'])) * tcPars['DT'])/sampleInterval -1
+        tcPars['t_slices'] = [slice(startInd, stopInd) for startInd, stopInd in zip(tcStartInds.astype('i4'), tcStopInds.astype('i4'))]
+        self.tcPars = tcPars
+        self.tracesRead = 0
+        self.secondsRead = 0
 
-    def findTrigs(self, dat, dumpN = 200, thresh = 3000):
+    def findTrigs(self, dat, dumpN = 200, thresh = 10000):#3000):
         sm=util.smooth(dat[dumpN:],3) #smooth out noise a little
         inds=np.where(sm>thresh)[0]
         inds=inds[1:][np.diff(inds)>5] #look for a gap in the high values
         inds+=dumpN
         return inds #indices of the rising edges
     
-    @classmethod
-    def readFlagsFromTrigTrace(trigTrace, par):
-        trigCommFlags = sum([(trigTraces[:, slc].mean()>trigCommThresh) << k for k,slc in enumerate(trigCommSlices) ])
+    def readFlagsFromTrigTrace(self, trigTrace):
+        trigCommFlags = sum([(trigTrace[slc].mean()> self.tcPars['thresh']) << k for k,slc in enumerate(self.tcPars['t_slices']) ])
+        #trigCommFlags = [(trigTrace[slc].mean()) for k,slc in enumerate(self.tcPars['t_slices']) ]
+        #print("trigCommFlags: ", trigCommFlags)
+        #print(trigCommFlags)
+        if trigCommFlags & 2: #indicates a PPS just came
+            self.secondsRead += 1
+            if self.secondsRead > 1:
+                self.tcPars['rate'] = self.tracesRead/(self.secondsRead-1)
+                #print(self.tcPars['rate'])
+        if self.secondsRead>0:
+            self.tracesRead += 1
         return trigCommFlags
         # somehow need to get sample interval and slice parameters in here. Probably in the init...
         
@@ -478,24 +499,31 @@ class PreprocessCallback(object):
                 #print("trig0: {}".format(trigInds[0])) 
                 if self.NptsPerSegment is None:
                     self.NptsPerSegment=int(np.mean(np.diff(trigInds)))-5
-                diffs=np.diff(np.hstack([[0], trigInds]) )-self.NptsPerSegment
+                diffs=np.diff(np.hstack([[0], trigInds]) ) - self.NptsPerSegment
                 if any(abs(diffs)<0):
                     print("oh no! diffs: {}".format(diffs))
                 #print("Npts per seg: {}".format(self.NptsPerSegment))
                 #print("len(TrigInds) {} in {} samples".format(len(trigInds), noOfSamples))
                 Nprocessed=trigInds[-1]
                 self._incData.dumpStart(Nprocessed) #Dump points up until the last trigger
-                tA=trigInds*self.sampleInterval+self.tLast 
+                tA= self.tLast + (1+np.arange(len(trigInds)))/self.tcPars['rate']#trigInds*self.sampleInterval+self.tLast 
                 self.tLast=tA[-1]
+                Nqueued=0
                 for t,trgI in zip(tA, [0]+list(trigInds[:-1])):
                     #print(trgI, self.NptsPerSegment)
                     yTrace, trigTrace = newDat[:,trgI:trgI+self.NptsPerSegment]
                     trigCommFlags = self.readFlagsFromTrigTrace(trigTrace)
                     self.q.put_nowait((t, trigCommFlags, yTrace) )
+                    Nqueued +=1
+                    #self.q.put_nowait((t, yTrace) )
                 self.totalSegments+=len(trigInds)
+                if Nqueued!= len(trigInds):
+                    errSt = f"{Nqueued} != {len(trigInds)} totalSegs: {self.totalSegments} \r\n"
+                    open("failure.txt", 'a').write(errSt)
             else:
                 Nprocessed=0
                 
+            print( f"{self.tracesRead} | {len(trigInds)} | totalSegs: {self.totalSegments} \r\n")
             Nsave=int(Nprocessed/self.Nds)
 
             if self.curSaveInd+Nsave< self.data.size and Nsave!=0:
@@ -582,16 +610,19 @@ def acquireStreamingLatest(bPUBLISH=True):
     """ Just return the latest values from the callback
     """
     
-    print("s", end='')
+    #print("s", end='')
     if not glbLOCAL:
         out=checkForPublished()
         if out is None:
             return [], [], None
-        else:
-            t,D=out
-        t=D['t']
-        datL=D['data']
-        return t, datL, D['dt']
+
+        datD = out[1]['datD']
+        t,flagsL, datL= datD['tL'], datD['flagsL'], datD['datL']
+        
+        #t=D['t']
+        #datL=D['data']
+        #dt=glbPS.sampleInterval*glbPS.Nds
+        return t, datL, flagsL
 
     q=glbPS.cb.q
     try:
@@ -610,15 +641,17 @@ def acquireStreamingLatest(bPUBLISH=True):
 
 
         #$print("time: {}, tLast: {}".format(time.time()-glbPS.cb.tStartStreaming, t[-1]))
-        t, datL=zip(*retrL)
+        t, flagsL, datL=zip(*retrL)
         t=[el+glbPS.cb.tStartStreaming for el in t]
         #t+=glbPS.cb.tStartStreaming
     else:
         t=[]
         datL=[]
+        print('-')
     if bPUBLISH and len(t)>0:
         #print('start publish... ', end='')
-        publishRaw(datL, t=t, Nds=glbPS.Nds)
+        #publishRaw(datL, t=t, flags= Nds=glbPS.Nds)
+        glbSENDER.send(tL = t, flagsL=flagsL, datL =  datL)
         #msg=b'raw '+ pickle.dumps((datL, glbPS.sampleInterval*6))
         #glbSOCKET_PAIR.send(msg)
         #glbSOCKET_PUBSUB.send(msg)
@@ -629,7 +662,7 @@ def acquireStreamingLatest(bPUBLISH=True):
             tElapsed=1;
         lag=time.time()-t[-1]
         print("Pub: {} segments, last at {} (lag:{}), Rate:{}".format(len(datL), t[-1], lag, Nstreamed/tElapsed))
-        if lag>0.5:
+        if lag>10:
             print("lag too much, restarting stream")
             startStreaming(bKeepSampsPerSeg=True)
 
