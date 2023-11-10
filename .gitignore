@@ -16,6 +16,7 @@
 *.np
 *.npz
 *.npy
+*.insyncdl
 
 
 
