@@ -4,7 +4,6 @@ Functions to set them all up given experiment parameters, as well as stop() and 
 """
 import time
 import pdb
-from tkinter import W
 from box import Box
 from box import Box as B
 import numpy as np
@@ -18,6 +17,7 @@ import fgs_mod as fgs
 import teensy_wiggler
 import tldevice
 from async_components import ZMQSubReadChunked
+from calibration_pulses import calibrationWaveform
 
 glbP = shared_parameters.SharedParams("NECOM")
 #import fgAgilent
@@ -70,6 +70,11 @@ def init_comms(bForce = False):
 # lru_cache is so that if the function is called identically twice in a row, 
 # it only operates once
 
+
+def setupGnomeRelated(doIt, minuteReSync, calibrationTimesUTC):
+    if doIt:
+        d.wiggler.write_cur_secs()
+
 # Set precision magnetic fields
 
 @lru_cache(1)
@@ -96,7 +101,7 @@ def setupPrecisionModulations( Bx, By, Bz ):
     
 # Synced to rep rate- i.e. Teensy driven stuff
 @lru_cache(1)
-def setupSyncedModulations(Bx=None, Bz=None, Bx_1 = None, Bz_1 = None, pump_Phi=None, pump_Theta=None, bAllOff=False ): 
+def setupSyncedModulations(Bx=None, Bz=None, Bx_1 = None, Bz_1 = None, Nx = None, Nz = None, pump_Phi=None, pump_Theta=None,table_H=None, bAllOff=False ): 
     """
     - mods is a list of tuples: (ax, amp, period)
     """
@@ -114,6 +119,12 @@ def setupSyncedModulations(Bx=None, Bz=None, Bx_1 = None, Bz_1 = None, pump_Phi=
         modL.append(["dac1", Bx.amp, Bx.period_cycles])
     if Bx_1:
         modL.append(["dac1_1", Bx_1.amp, Bx_1.period_cycles])
+    if Nx:
+        modL.append(["N_A", Nx.amp, Nx.period_cycles])
+    if Nz:
+        modL.append(["N_B", Nz.amp, Nz.period_cycles])
+    if table_H and 1:
+        modL.append(["table_H", table_H.amp, table_H.period_cycles])
     
     print(modL)
     for mod_params in modL:
@@ -123,12 +134,17 @@ def setupSyncedModulations(Bx=None, Bz=None, Bx_1 = None, Bz_1 = None, pump_Phi=
     else:
         d.wiggler.modOn()
     
-
+@lru_cache(1)
 def setupFGs(patternD, tTotal):
     d.fgs.setPulsePatterns(patternD, tTotal)
+    #d.fgs.chs['Bx'].setOutputWaveform(*calibrationWaveform())
+    #d.fgs.chs['Bz'].setOutputWaveform(*calibrationWaveform())
 
+def clearCached():
+    for func in [setupFGs, setupSyncedModulations, setupPrecisionModulations, setupOven, setupDCFields]:
+        func.cache_clear()
 
-def setupExperiment():
+def setupExperiment(bForceUpdate=False):
     _setupExperiment(glbP.P)
 
 def _setupExperiment(params):
@@ -139,15 +155,17 @@ def _setupExperiment(params):
     setupFGs(**params.pulses)
     setupSyncedModulations(**params.modsSynced)
     setupPrecisionModulations(**params.modsPrec)
+
+    #d.wiggler.set_period(int(params.pulses.tTotal*1e6))
     #acq.setScopeParams(acqTime=params.totalTime)
     sleep(0.2)
 
-def changeParams(bPermanent=False, **kwargs):
+def changeParams(changeD={}, bPermanent=False ):
     if bPermanent:
-        glbP.change(**kwargs)
+        glbP.change(**changeD)
         setupExperiment()
     else:
-        _setupExperiment(glbP.getChanged(**kwargs))
+        _setupExperiment(glbP.getChanged(**changeD))
 
 def tweakParams(bPermanent=False, frac=1, **kwargs):
     if bPermanent:
@@ -174,8 +192,10 @@ def waitForStableTemp():
 
 def doPumpAlign():
     setupFGs(**pumpAlign)
+    d.wiggler.setPeriod(100000)
 
-def recordRaw(name, Nsamples, metaD = {}, baseDir = "recorded", tStart = -1):
+from scipy import signal
+def recordRaw(name, Nsamples, metaD = {}, baseDir = "recorded", tStart = -1, Nds = 4):
     if tStart == 0:
         tStart = time.time()
     
@@ -194,7 +214,8 @@ def recordRaw(name, Nsamples, metaD = {}, baseDir = "recorded", tStart = -1):
     reader = ZMQSubReadChunked(port= IN_PORT, topic= 'raw')
     Nwritten = 0
     from npy_append_array import NpyAppendArray
-    with NpyAppendArray(fpath) as dat_arr, NpyAppendArray(fpath[:-4]+'_t.npy') as t_arr:
+    with NpyAppendArray(fpath) as dat_arr, NpyAppendArray(fpath[:-4]+'_t.npy') as t_arr,\
+        NpyAppendArray(fpath[:-4]+"_flags.npy") as flags_arr:
         while 1: # wait until tStart
             retrieved = reader.retrieve()
             if retrieved:
@@ -202,9 +223,12 @@ def recordRaw(name, Nsamples, metaD = {}, baseDir = "recorded", tStart = -1):
                 if tL[-1] >=tStart:
                     ind = np.searchsorted(tL, tStart)
                     datL = np.array(retrieved['data']['datL'][ind:])
+                    flagsL = np.array(retrieved['data']['flagsL'][ind:])
                     tL = np.array(tL[ind:])
                     break
         while 1:
+            datL = np.ascontiguousarray(signal.decimate(datL, Nds, axis=-1)).astype('i2')
+            flags_arr.append(flagsL)
             dat_arr.append(datL)
             t_arr.append(tL)
             Nwritten += len(tL)
@@ -218,20 +242,27 @@ def recordRaw(name, Nsamples, metaD = {}, baseDir = "recorded", tStart = -1):
             data = retrieved['data']
             tL = np.array(data['tL'])
             datL = np.array(data['datL'])
-    return t_arr, dat_arr
-pumpAlign = Box({"patternD": {'pump': {'startTs': [00e-6, 2000e-6], 
-                        'widths':400e-6,
-                        'heights': [7,4],
-                        },
-            "bigBy" :{"startTs": [000e-6,450e-6, 2000e-6, 2450e-6],
-                        "widths": [200e-6, 4e-6, 200e-6, 4e-6],
-                        "heights": [.5, -.4, -.5, .4]},
-            "Bz" :{"startTs": [1200e-6, 3200e-6],
-                        "widths": 500e-6,
-                        "heights": [1., -1.]},
-            }, 
-            "tTotal" : 4000e-6,
-            })
+            flagsL = np.array(data['flagsL'])
+    return t_arr, dat_arr, flags_arr
+pumpAlign = Box({"patternD": {
+                'pump': {'startTs': [00e-6, 1./256./2],
+                            'widths':400e-6,
+                            'heights': [9,4],
+                            },
+                'aom': {'startTs': [00e-6, 1./256./2],
+                            'widths':400e-6,
+                            'heights': [5,5],
+                            },
+                "bigBy" :{"startTs": [000e-6,405e-6, 1./256/2, 1./256/2 +405e-6],
+                            "widths": [200e-6, 10e-6, 200e-6, 10e-6],
+                            "heights": [1, -.5, -1, .05]},
+                "Bz" :{"startTs": [1200e-6, 1./256/2 +1200e-6],
+                            "widths": 500e-6,
+                            "heights": [2., -2.]},
+                },
+                "tTotal" : 3906.20e-6,
+                }, frozen_box=True)
+
 if __name__=="__main__":
     from importlib import reload
     from IPython.core.interactiveshell import InteractiveShell

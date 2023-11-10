@@ -21,6 +21,8 @@ def processStream(data, metaData = {}, Nread = None):
     print(f"{data.keys}")
     tL = data['tL']
     y = data['datL']
+    flags = data['flagsL']
+    print(["{:08b}".format(flag) for flag in flags])
     mnY = np.mean(y, axis=0)
     N = mnY.size
     t = np.arange(N)

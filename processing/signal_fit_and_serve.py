@@ -24,11 +24,31 @@ from statsmodels import api as sm
 from box import Box
 import time
 from async_components import ZMQSubReadChunked, ChunkedSourcePlotter, ZMQChunkedPublisher, AsyncTransformer
+import sig_proc_utils as spu
 
 glbP = shared_parameters.SharedParams("NECOM")
 
+N_SUBS = 2
+def mask_signatures(sigD, dumpStart=300, dumpEnd = 20):
+    
+    Ntot = list(sigD.values())[0].size
+    inds = np.arange(Ntot)
+    N= Ntot//N_SUBS
+    mask = np.where( (inds %N<dumpStart) | (inds %N>N-dumpEnd) )[0]
+    for key in sigD.keys():
+        sigD[key][mask] = 0
+    return sigD
+
+def preprocess(traces):
+    return traces
+    traces=np.array(traces)
+    Npts = traces.shape[-1]
+    y1, y2 = traces[...,:Npts//2], traces[...,-Npts//2:] 
+    return y2 - y1
 #_---------------------------------------------------
-# Redo:
+
+
+# Not used currently:
 def fitting_func(traces, signatures, bReturnObjs = False):
 
     resF=(lambda mod: mod.fit()) if bReturnObjs else (lambda mod: mod.fit().params)
@@ -48,17 +68,30 @@ def fitting_func(traces, signatures, bReturnObjs = False):
     return resD
 
 def transformF(new_data, state):
-    signatures = {name:state.signatures[name] for name in state.to_fit }
     data = new_data['data']
     t = data['tL']
     yL= data['datL']
-    resD = fitting_func(yL, signatures)
+    flags = data['flagsL']
+
+    yL = preprocess(yL)
+    if 1:
+        resD = spu.fit_plus_minus_with_plus(yL, state.signatures)
+    if 0:
+        signatures = {name:state.signatures[name] for name in state.to_fit }
+        resD = fitting_func(yL, signatures)
+
     resD['tL'] = t
+    resD['flags'] = flags
     return resD
     
 def update_state(new_data, state):
     if glbP.changedSinceLoad() or state.signatures is None:
-        state.signatures = glbP.loadArray('signatures')
+        sigs = glbP.loadArray('signatures')
+        sigNames = set([name.rsplit("_",1)[0] for name in sigs.keys()])
+        state.signatures = {sigName:sigs[sigName+"_0"] for sigName in sigNames}
+        state.signatures = mask_signatures(state.signatures)
+        state.signatures = {sigName:preprocess(sig) for sigName, sig in state.signatures.items()}
+
     Nsamps = len(new_data['data']['tL'])
     state.N_sent += Nsamps
     print(f"Sample rate: {state.N_sent/(time.time() - state.t_start)}")
@@ -72,7 +105,7 @@ def main():
         signatures = None,
         N_sent = 0,
         t_start = time.time(),
-        to_fit = ["Bx_1", "Bz_1", "pump_Phi"]
+        to_fit = ["Bx_1", "Bz_1"]#, "pump_Phi"]
     )
     reader = ZMQSubReadChunked(port = IN_PORT, topic = "raw")
     sender = ZMQChunkedPublisher(port = OUT_PORT, topic = "fitted")
@@ -81,20 +114,22 @@ def main():
             transformF = transformF,
             state_updateF = update_state,
             outputF = lambda args: sender.send(**args),
-            run_interval = 0.1,
+            run_interval = 0.3,
             state = state0,
             )
     # Plotter
     reader = ZMQSubReadChunked(port = OUT_PORT, topic = "fitted")
+    tStart = time.time()
     def getData():
         new_dat = reader.retrieve()
         if new_dat:
-            print(new_dat['data'].keys())
+            #print(new_dat['data'].keys())
+            new_dat['data']['tL'] = np.array(new_dat['data']['tL']) - tStart;
         return new_dat
     plotter = ChunkedSourcePlotter(
             inputF = getData,
             label = 'fitted',
-            poll_interval= 0.2,
+            poll_interval= .5,
             )
     transformer.start()
     plotter.start()
@@ -123,3 +158,6 @@ if __name__ == "__main__":
     def start():
         transformer.start()
         plotter.start();
+
+    def change_sig_masks(dumpStart, dumpEnd):
+        return mask_signatures(transformer.state.signatures, dumpStart=dumpStart, dumpEnd =dumpEnd)

@@ -1,0 +1,7 @@
+"""  _
+"""
+import xarray as xa
+
+def load_xa(fileName):
+    ds = xa.open_dataset(fileName)
+    #unpack the attrs into nested dicts/boxes

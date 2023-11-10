@@ -13,7 +13,7 @@ import pdb
 
 ##### TRIGGER PATTERNS:
 from functools import partial
-def makePulseTrain(startTs, widths, heights, sampleRate, tTotal=None, Nsamples=None, pulseFunc=partial(util.tophat, bDigitizeFix=True), smthFact=4, endCutPts=0, startCutPts=0):
+def makePulseTrain(startTs, widths, heights, sampleRate, offset=0,tTotal=None, Nsamples=None, pulseFunc=partial(util.tophat, bDigitizeFix=True), smthFact=4, endCutPts=0, startCutPts=0):
     """Takes a list of pulse times, widths and heights and returns a digitized waveform with those pulses represented.
 
     """
@@ -32,7 +32,7 @@ def makePulseTrain(startTs, widths, heights, sampleRate, tTotal=None, Nsamples=N
     #t=np.linspace(0,tSeqTotal,tSeqTotal*sampleRate)*1.0;
     #pdb.set_trace()
     t=np.arange(Nsamples, dtype='f8')/sampleRate/smthFact
-    y=np.zeros(Nsamples, dtype='f8')
+    y=np.zeros(Nsamples, dtype='f8') + offset
     for startT, tWidth, height in zip(startTs, widths, heights):
         #y+=np.where( (t>startT) & (t<startT+tWidth), height, 0.)
         plsShape=pulseFunc(t, tWidth, startT+tWidth/2., bDigitizeFix=True)*height

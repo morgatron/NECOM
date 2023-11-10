@@ -450,8 +450,8 @@ class PreprocessCallback(object):
             startT = 1000e-6,
             DT = 100e-6,
             thresh = 1000,
-            N = 8,
-            rate = 128, #Hz
+            N = 11,
+            rate = 256, #Hz
         )
         tcStartInds = (tcPars['startT'] + np.arange(tcPars['N'])*tcPars['DT'])/sampleInterval + 1
         tcStopInds = (tcPars['startT'] + (1+np.arange(tcPars['N'])) * tcPars['DT'])/sampleInterval -1

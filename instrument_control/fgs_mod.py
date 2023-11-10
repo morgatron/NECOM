@@ -83,8 +83,9 @@ def setupTriggers():
     for ch in chs.values():
         ch.setTriggerMode("ext")
         ch.setBurstMode("TRIG")
-    chs.pump.setBurstMode("TRIG")
-    chs.pump.setTriggerMode("int")
+    #chs.pump.setBurstMode("TRIG")
+    #chs.pump.setTriggerMode("int")
+    #chs.pump.setTriggerMode("ext")
 def init(bMockHardware = False):
     global dg1000, dg900_A, dg900_B, chs, dpm
     if bMockHardware:
@@ -108,6 +109,7 @@ def init(bMockHardware = False):
             pump = Channel(dg1000, chanNum=0),
             bigBy = Channel(dg1000, chanNum=1),
             Bx = Channel(dg900_B, chanNum=0),
+            aom = Channel(dg900_B, chanNum=1),
             By = Channel(dg900_A, chanNum=0),
             Bz = Channel(dg900_A, chanNum=1),
         )
@@ -152,13 +154,17 @@ def setPulsePatterns(patternD, tTotal, othersOff=True, **kwargs):
     all_chan_names = chs.keys()
     used_chan_names = patternD.keys()
     for chan_name, pulse_desc in patternD.items():
-        setPulsePattern(chan_name, Box(dict(pulse_desc) | kwargs | {"tTotal":tTotal-7e-6}, frozen_box=True))
+        # Make all the waveforms except the pump's 7us shorter, so they'll be ready for the pump trigger
+        # setPulsePattern(chan_name, Box(dict(pulse_desc) | kwargs | {"tTotal":tTotal-7e-6}, frozen_box=True))
+        
+        # When the pulse comes from the MCU, just make them all a little shorter than the MCU period
+        setPulsePattern(chan_name, Box(dict(pulse_desc) | kwargs | {"tTotal": tTotal-7e-6}, frozen_box=True))
 
     # Turn off all unused channels
     unused_chan_names = set(all_chan_names).difference(used_chan_names)
     for chan_name in unused_chan_names:
         chs[chan_name].setOutputState(0)
-    chs.pump.setBurstPeriod(tTotal)
+    #chs.pump.setBurstPeriod(tTotal)
     setupTriggers()
 
 def allOff():

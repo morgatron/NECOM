@@ -88,7 +88,7 @@ class RigolFG900(FG.FG):
 
         pointsSent = 0
         while pointsSent < Npts:
-            print(f"pts left: {pointsSent}")
+            print(f"pts sent: {pointsSent}")
             datBlkHead,datBlk= array_to_binary_block(y[pointsSent:pointsSent+maxBlkSize])
             pointsSent += maxBlkSize
             if pointsSent >= Npts:
