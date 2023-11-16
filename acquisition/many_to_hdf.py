@@ -80,7 +80,8 @@ def write_new_hdf_from_old_files(basePath):
 
 if __name__ == "__main__":
     #search_path = "../recorded"
-    search_path = "/home/morgan/Insync/u4284055@anu.edu.au/OneDrive Biz/NECOM_DATA/2023"
+    #search_path = "/home/morgan/Insync/u4284055@anu.edu.au/OneDrive Biz/NECOM_DATA/2023"
+    search_path = "/home/morgan/opt/onedrive/NECOM_DATA/2023"
     for root, dirs, files in os.walk(search_path):
         #print(root, dirs, files)
         for fileName in list(filter_base_names(files))[:]:
