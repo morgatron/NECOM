@@ -1,21 +1,17 @@
 
 
-from tkinter import W
 from instrument_control.pulse_patterns import makePulseTrain
 #from . import FG
 from box import Box
 try:
     from .rigol.rigolfg_1000 import RigolFG1000
     from .rigol.rigolfg_900 import RigolFG900
-    from . import util
 except ImportError:
     from rigol.rigolfg_1000 import RigolFG1000
     from rigol.rigolfg_900 import RigolFG900
-    import util
 
 import numpy as np
 import inspect
-import pdb
 
 B_PLOT = True
 SAMPLE_RATE = 1e6
