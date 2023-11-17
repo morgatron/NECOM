@@ -1,0 +1,22 @@
+
+{
+    pulses: { 
+        tPumpStart: 10e-6,
+        tMagStart : 0e-6,
+        tMagWidth : 10e-6,
+        tPumpWidth : 10e-6,
+        tTot : 1700e-6
+    },
+    fields:{
+        Bx:1.00,
+        By:-0.0,
+        Bz:-0.00,
+    },
+    modulations = {
+        Bx = 0.02,
+        BxFreq = 7,
+        #PTheta = (0.001, 0.1),
+        #PPhi = (0.001, 0.15)
+    }
+    totalTime=1./62, # Period of mains AC
+}

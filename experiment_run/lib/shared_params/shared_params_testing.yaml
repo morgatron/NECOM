@@ -1,0 +1,16 @@
+Bx: 0.5
+fields:
+  Bx: 1.0
+  By: -0.0
+  Bz: -0.0
+modulations:
+  Bx: 0.02
+  BxFreq: 7
+oven:
+  T: 120
+pulses:
+  tMagStart: 0.0
+  tMagWidth: 1.0e-05
+  tPumpStart: 1.0e-05
+  tPumpWidth: 1.0e-05
+  tTot: 0.0017

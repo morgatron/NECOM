@@ -1,0 +1,5 @@
+setup.py
+shared_params.egg-info/PKG-INFO
+shared_params.egg-info/SOURCES.txt
+shared_params.egg-info/dependency_links.txt
+shared_params.egg-info/top_level.txt

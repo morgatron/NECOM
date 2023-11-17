@@ -13,9 +13,10 @@ This is currently envisaged as the code for both running and analysing the NECOM
         * real time plotting
     * **GNOME**
         * sending processed data to GNOME
+    * **scripts**
+        * scripts for doing experiment tasks
     * **lib**
-        * extra code to be installed
-        * **DPM**
+        * extra code to be installed (if it doesn't exist elsehere)
         * **shared_parameters**
 * **MCU**
     * **MAIN**
@@ -23,7 +24,6 @@ This is currently envisaged as the code for both running and analysing the NECOM
         * possibly also wiring?
     * **STEPPER_MCU**
         * code for custom ESPXXX based stepper drivers (if required)
-
 * **analysis**
     * **notebooks**
         * notebooks etc for analysis of existing data, or at least a link to where these can be found.
